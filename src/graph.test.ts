@@ -373,6 +373,41 @@ describe("batch operations", () => {
     expect(results[1].error).toContain("Task gone");
   });
 
+  it("retry les sub-responses 429 du batch individuellement", async () => {
+    const fetchMock = makeFetch([
+      // Batch call: first sub-request OK, second throttled
+      {
+        body: {
+          responses: [
+            { id: "0", status: 201, body: { id: "TA", title: "A" } },
+            {
+              id: "1",
+              status: 429,
+              body: { error: { code: "activityLimitReached", message: "throttled" } },
+            },
+          ],
+        },
+      },
+      // Individual retry of the throttled sub-request succeeds
+      { status: 201, body: { id: "TB", title: "B" } },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const results = await batchCreateTasks([
+      { listId: "L1", task: { title: "A" } },
+      { listId: "L2", task: { title: "B" } },
+    ]);
+    expect(results).toHaveLength(2);
+    expect(results[0].ok).toBe(true);
+    expect(results[1].ok).toBe(true);
+    expect(results[1].result?.id).toBe("TB");
+    // 1 batch call + 1 individual retry = 2 fetches
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // The retry was issued against the original URL (not /$batch)
+    const retryUrl = String(fetchMock.mock.calls[1][0]);
+    expect(retryUrl).toContain("/me/todo/lists/L2/tasks");
+    expect(retryUrl).not.toContain("/$batch");
+  });
+
   it("batch chunké quand > 20 items", async () => {
     const responses1 = Array.from({ length: 20 }, (_, i) => ({
       id: String(i),

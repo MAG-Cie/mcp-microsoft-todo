@@ -242,7 +242,48 @@ export async function graphBatch(
         })),
       }),
     });
-    all.push(...data.responses);
+
+    // Per-sub-response retry: Graph $batch returns HTTP 200 with throttled
+    // sub-requests reported as status 429 (or 503) inside the body. The outer
+    // graphFetch retry only sees the 200 wrapper, so we re-issue throttled
+    // sub-requests individually here. graphFetch itself honors Retry-After
+    // and applies bounded exponential backoff on the retry.
+    const responses = data.responses;
+    for (let j = 0; j < responses.length; j++) {
+      const r = responses[j];
+      const retryable = r.status === 429 || (r.status >= 500 && r.status < 600);
+      if (!retryable) continue;
+      const original = chunk.find((req) => req.id === r.id);
+      if (!original) continue;
+      try {
+        const init: RequestInit = { method: original.method };
+        if (original.headers) init.headers = original.headers;
+        if (original.body !== undefined) {
+          init.body = typeof original.body === "string"
+            ? original.body
+            : JSON.stringify(original.body);
+        }
+        const retryBody = await graphFetch<unknown>(original.url, init);
+        responses[j] = {
+          id: r.id,
+          status: original.method === "POST" ? 201 : original.method === "DELETE" ? 204 : 200,
+          body: retryBody,
+        };
+      } catch (err: any) {
+        // Retries exhausted; surface a recognizable error in the sub-response body
+        responses[j] = {
+          id: r.id,
+          status: r.status,
+          body: {
+            error: {
+              code: "throttled",
+              message: err?.message ?? "Throttled after retries",
+            },
+          },
+        };
+      }
+    }
+    all.push(...responses);
   }
   return all;
 }

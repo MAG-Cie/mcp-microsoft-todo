@@ -57,7 +57,7 @@ import {
 import { t } from "./i18n.js";
 
 const server = new Server(
-  { name: "microsoft-todo", version: "1.1.4" },
+  { name: "microsoft-todo", version: "1.1.5" },
   { capabilities: { tools: {} } }
 );
 

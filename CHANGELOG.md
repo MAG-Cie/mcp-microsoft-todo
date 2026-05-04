@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-05-04
+
+### Fixed
+- **Sub-response throttling silently leaked through `$batch`** — Microsoft Graph's `$batch` endpoint returns HTTP 200 even when individual sub-requests are throttled (status 429 inside the response body). The outer `graphFetch` retry only sees the 200 wrapper and never re-issues the throttled sub-requests, so callers like `list_all_tasks`, `summarize_today`, `search_tasks`, `list_overdue_tasks`, `list_tasks_by_category`, `bulk_update_categories`, and the `batch_*` mutators surfaced `activityLimitReached` errors per-list instead of completing the work.
+- `graphBatch()` now retries throttled sub-responses (status 429 or 5xx) individually via `graphFetch`, which honors `Retry-After` and applies bounded exponential backoff. If retries are exhausted, the sub-response is replaced with a recognizable `throttled` error body so the caller still gets a coherent per-item result.
+
+### Notes
+- End-to-end smoke test against real Graph after deliberately triggering throttling: `list_all_tasks` returned 80 tasks across 8 lists with **0 errors** (vs 4/8 lists previously failing with `activityLimitReached`).
+- 50/50 unit tests pass, including a new test covering the per-sub-response retry path.
+
 ## [1.1.4] - 2026-05-04
 
 ### Added
