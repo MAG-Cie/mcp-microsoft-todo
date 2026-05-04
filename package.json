@@ -1,0 +1,57 @@
+{
+  "name": "@mag-cie/mcp-microsoft-todo",
+  "version": "0.2.0",
+  "description": "MCP server pour Microsoft To Do via Microsoft Graph API. Stdio, device code flow, install local.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-microsoft-todo": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "auth": "tsx src/auth.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@azure/msal-node": "^2.16.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "microsoft-todo",
+    "microsoft-graph",
+    "todo",
+    "tasks"
+  ],
+  "author": "Antoine Guittet <antoine.guittet@mag-cie.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mag-cie/mcp-microsoft-todo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mag-cie/mcp-microsoft-todo/issues"
+  },
+  "homepage": "https://github.com/mag-cie/mcp-microsoft-todo#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

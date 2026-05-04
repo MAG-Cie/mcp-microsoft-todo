@@ -1,0 +1,3 @@
+# Bloque les .md auto-générés dans dist/ (claude-mem context, etc.)
+dist/**/*.md
+dist/**/CLAUDE.md
