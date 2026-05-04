@@ -1,3 +1,35 @@
+## [2026-05-04 19:30] — v1.0.1: security + performance audit follow-through
+
+### What was done
+
+Full security & performance audit performed on v1.0.0, all 6 medium/low items addressed:
+
+- **S1 (was MEDIUM)**: bumped `@azure/msal-node` `^2.16.0` → `^5.1.5` to clear the moderate uuid<14 CVE (GHSA-w5hq-g745-h8pq). `npm audit` now reports 0 vulnerabilities. v5 API is wire-compatible with our usage — zero source changes needed.
+- **S2 (was MEDIUM)**: added `encodeURIComponent` (aliased as `enc()`) on every user-provided ID (`listId`, `taskId`, `itemId`, `resourceId`, `extensionName`) before interpolating into Graph URL templates. Defense in depth — Graph itself rejects malformed paths but encoding is the right belt-and-braces measure.
+- **S3 (was LOW)**: `chmod 0600` on `token-cache.json` after each write (no-op on Windows, best-effort elsewhere). Token is a bearer credential — should be owner-only on multi-user systems.
+- **S4 (was LOW)**: every tool schema is now `.strict()`-parsed at the call site (`schemas.X.strict().parse(args)`). LLM-hallucinated extra args now fail validation cleanly. Plus added regex `^[A-Za-z0-9._-]+$` (max 120 chars) on `extension_name` to reject garbage at the validation layer.
+- **P1 (was LOW)**: extracted `fetchTasksAcrossLists()` helper that uses Graph `$batch` when N > 5 lists (instead of `Promise.all` with N parallel HTTP requests). Reduces connection overhead and rate-limit risk on accounts with many lists. The 4 cross-list helpers (`searchTasks`, `summarizeToday`, `listOverdueTasks`, `listTasksByCategory`) now use it.
+- **P2 (was LOW)**: `MAX_PAGES` cap in `paginateAll` reduced from 50 to 20 (≈2000 items max). `paginate` param description updated with explicit warning about LLM context budget.
+
+### Decisions & rationale
+
+- **MSAL v5 bump as a patch release** rather than v1.1: API surface used by us (`PublicClientApplication`, `acquireTokenByDeviceCode`, `acquireTokenSilent`, `cachePlugin`) is unchanged. tsc + tests pass without source changes. Calling it a patch is justified because consumer behavior is identical.
+- **`.strict()` at parse site** rather than on each schema definition: one-line global edit (`.parse(` → `.strict().parse(`), no schema-by-schema diff. Same effect.
+- **Threshold of 5 lists for batch routing**: parallel direct calls have low HTTP overhead for small N, and `$batch` itself has fixed overhead (parsing the multipart-like response). 5 is an empirical sweet spot — most users have 5-15 lists.
+- **MAX_PAGES halved (50 → 20)**: typical LLM context window 200k tokens; 2000 items × ~50 tokens = 100k tokens worst case, leaves 50% headroom. 5000 items would have approached the ceiling.
+
+### Issues encountered
+
+- None — all fixes landed clean, 49/49 tests still pass on the first build.
+
+### Next steps
+
+1. Commit + push + npm publish v1.0.1
+2. Verify CI green
+3. Future: v1.1 could add file attachments (Graph beta) once the API stabilizes; v2.0 if/when remote HTTP/SSE transport is needed for Claude.ai custom connectors
+
+---
+
 ## [2026-05-04 19:00] — v1.0.0: stable milestone, English-first project
 
 ### What was done

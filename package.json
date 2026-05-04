@@ -1,6 +1,6 @@
 {
   "name": "@mag-cie/mcp-microsoft-todo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server for Microsoft To Do via the Microsoft Graph API. Stdio transport, MSAL device code auth, local install. Compatible with Claude Code, Claude Desktop, Cursor, and any stdio MCP client.",
   "type": "module",
   "main": "dist/index.js",
@@ -22,7 +22,7 @@
     "prepublishOnly": "npm run test && npm run build"
   },
   "dependencies": {
-    "@azure/msal-node": "^2.16.0",
+    "@azure/msal-node": "^5.1.5",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "zod": "^3.23.8"
   },

@@ -6,7 +6,7 @@
  * The MCP server then reuses the cache + silent refresh.
  */
 import { PublicClientApplication, LogLevel } from "@azure/msal-node";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, chmod } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -42,6 +42,13 @@ const afterCacheAccess = async (cacheContext: any) => {
   if (cacheContext.cacheHasChanged) {
     await mkdir(dirname(CACHE_FILE), { recursive: true });
     await writeFile(CACHE_FILE, cacheContext.tokenCache.serialize(), "utf-8");
+    // Restrict to owner read/write (token = bearer credential).
+    // No-op on Windows (FS doesn't honor POSIX bits), best-effort elsewhere.
+    try {
+      await chmod(CACHE_FILE, 0o600);
+    } catch {
+      // ignore — best effort
+    }
   }
 };
 

@@ -53,7 +53,7 @@ import {
 } from "./formatters.js";
 
 const server = new Server(
-  { name: "microsoft-todo", version: "1.0.0" },
+  { name: "microsoft-todo", version: "1.0.1" },
   { capabilities: { tools: {} } }
 );
 
@@ -112,7 +112,7 @@ const paginateField = {
     .boolean()
     .optional()
     .describe(
-      "If true: follows @odata.nextLink up to 50 pages (fetches ALL entries). Default false (1 page)."
+      "If true: follows @odata.nextLink up to 20 pages (≈2000 items max). Default false (1 page). Use sparingly — large result sets may exhaust the LLM context window."
     ),
 };
 
@@ -289,6 +289,8 @@ const schemas = {
     extension_name: z
       .string()
       .min(1)
+      .max(120)
+      .regex(/^[A-Za-z0-9._-]+$/, "extension_name: only letters, digits, '.', '_', '-' allowed")
       .describe("Unique name, ideally reverse-DNS, e.g. 'com.example.mydata'"),
     data: z
       .record(z.unknown())
@@ -300,7 +302,11 @@ const schemas = {
   delete_extension: z.object({
     list_id: z.string(),
     task_id: z.string(),
-    extension_name: z.string().min(1),
+    extension_name: z
+      .string()
+      .min(1)
+      .max(120)
+      .regex(/^[A-Za-z0-9._-]+$/, "extension_name: only letters, digits, '.', '_', '-' allowed"),
   }),
   list_overdue_tasks: z.object({
     top_per_list: z.number().int().positive().max(100).optional(),
@@ -398,7 +404,7 @@ const paginateJsonProp = {
   paginate: {
     type: "boolean",
     description:
-      "If true: follows @odata.nextLink up to 50 pages (fetches ALL entries). Default false.",
+      "If true: follows @odata.nextLink up to 20 pages (≈2000 items max). Default false. Use sparingly — large result sets may exhaust the LLM context window.",
   },
 };
 
@@ -875,7 +881,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
     switch (name) {
       case "list_task_lists": {
-        const a = schemas.list_task_lists.parse(args ?? {});
+        const a = schemas.list_task_lists.strict().parse(args ?? {});
         const lists = await listTaskLists({ paginate: a.paginate });
         return out(lists, a.verbose, (ls) =>
           ls.length === 0
@@ -884,7 +890,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         );
       }
       case "list_tasks": {
-        const a = schemas.list_tasks.parse(args);
+        const a = schemas.list_tasks.strict().parse(args);
         const tasks = await listTasks(a.list_id, {
           filter: a.filter,
           top: a.top,
@@ -898,12 +904,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         );
       }
       case "get_task": {
-        const a = schemas.get_task.parse(args);
+        const a = schemas.get_task.strict().parse(args);
         const t = await getTask(a.list_id, a.task_id);
         return out(t, a.verbose, formatTaskCompact);
       }
       case "create_task": {
-        const a = schemas.create_task.parse(args);
+        const a = schemas.create_task.strict().parse(args);
         const t = await createTask(a.list_id, {
           title: a.title,
           body: a.body,
@@ -919,7 +925,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return out(t, a.verbose, formatTaskCompact);
       }
       case "update_task": {
-        const a = schemas.update_task.parse(args);
+        const a = schemas.update_task.strict().parse(args);
         const t = await updateTask(a.list_id, a.task_id, {
           title: a.title,
           status: a.status,
@@ -936,22 +942,22 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return out(t, a.verbose, formatTaskCompact);
       }
       case "complete_task": {
-        const a = schemas.complete_task.parse(args);
+        const a = schemas.complete_task.strict().parse(args);
         const t = await completeTask(a.list_id, a.task_id);
         return out(t, a.verbose, formatTaskCompact);
       }
       case "delete_task": {
-        const a = schemas.delete_task.parse(args);
+        const a = schemas.delete_task.strict().parse(args);
         await deleteTask(a.list_id, a.task_id);
         return text(`Task ${a.task_id} deleted.`);
       }
       case "move_task": {
-        const a = schemas.move_task.parse(args);
+        const a = schemas.move_task.strict().parse(args);
         const t = await moveTask(a.source_list_id, a.task_id, a.target_list_id);
         return out(t, a.verbose, (x) => `Moved. New ID: ${formatTaskCompact(x)}`);
       }
       case "search_tasks": {
-        const a = schemas.search_tasks.parse(args);
+        const a = schemas.search_tasks.strict().parse(args);
         const results = await searchTasks(a.query, {
           topPerList: a.top_per_list,
           includeCompleted: a.include_completed,
@@ -959,12 +965,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return out(results, a.verbose, formatSearchCompact);
       }
       case "summarize_today": {
-        const a = schemas.summarize_today.parse(args ?? {});
+        const a = schemas.summarize_today.strict().parse(args ?? {});
         const summary = await summarizeToday(a.time_zone);
         return out(summary, a.verbose, formatSummaryCompact);
       }
       case "list_checklist_items": {
-        const a = schemas.list_checklist_items.parse(args);
+        const a = schemas.list_checklist_items.strict().parse(args);
         const items = await listChecklistItems(a.list_id, a.task_id, {
           paginate: a.paginate,
         });
@@ -975,7 +981,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         );
       }
       case "create_checklist_item": {
-        const a = schemas.create_checklist_item.parse(args);
+        const a = schemas.create_checklist_item.strict().parse(args);
         const item = await createChecklistItem(
           a.list_id,
           a.task_id,
@@ -985,7 +991,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return out(item, a.verbose, formatChecklistCompact);
       }
       case "update_checklist_item": {
-        const a = schemas.update_checklist_item.parse(args);
+        const a = schemas.update_checklist_item.strict().parse(args);
         const item = await updateChecklistItem(a.list_id, a.task_id, a.item_id, {
           displayName: a.display_name,
           isChecked: a.is_checked,
@@ -993,12 +999,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return out(item, a.verbose, formatChecklistCompact);
       }
       case "delete_checklist_item": {
-        const a = schemas.delete_checklist_item.parse(args);
+        const a = schemas.delete_checklist_item.strict().parse(args);
         await deleteChecklistItem(a.list_id, a.task_id, a.item_id);
         return text(`Sub-item ${a.item_id} deleted.`);
       }
       case "list_linked_resources": {
-        const a = schemas.list_linked_resources.parse(args);
+        const a = schemas.list_linked_resources.strict().parse(args);
         const rs = await listLinkedResources(a.list_id, a.task_id, {
           paginate: a.paginate,
         });
@@ -1009,7 +1015,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         );
       }
       case "create_linked_resource": {
-        const a = schemas.create_linked_resource.parse(args);
+        const a = schemas.create_linked_resource.strict().parse(args);
         const r = await createLinkedResource(a.list_id, a.task_id, {
           webUrl: a.web_url,
           applicationName: a.application_name,
@@ -1019,12 +1025,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return out(r, a.verbose, formatLinkedCompact);
       }
       case "delete_linked_resource": {
-        const a = schemas.delete_linked_resource.parse(args);
+        const a = schemas.delete_linked_resource.strict().parse(args);
         await deleteLinkedResource(a.list_id, a.task_id, a.resource_id);
         return text(`Linked resource ${a.resource_id} deleted.`);
       }
       case "batch_create_tasks": {
-        const a = schemas.batch_create_tasks.parse(args);
+        const a = schemas.batch_create_tasks.strict().parse(args);
         const items: Array<{ listId: string; task: CreateTaskInput }> = a.items.map(
           (it) => ({
             listId: it.list_id,
@@ -1046,21 +1052,21 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return out(results, a.verbose, (rs) => formatBatchCompact(rs, formatTaskCompact));
       }
       case "batch_complete_tasks": {
-        const a = schemas.batch_complete_tasks.parse(args);
+        const a = schemas.batch_complete_tasks.strict().parse(args);
         const results = await batchCompleteTasks(
           a.items.map((it) => ({ listId: it.list_id, taskId: it.task_id }))
         );
         return out(results, a.verbose, (rs) => formatBatchCompact(rs, formatTaskCompact));
       }
       case "batch_delete_tasks": {
-        const a = schemas.batch_delete_tasks.parse(args);
+        const a = schemas.batch_delete_tasks.strict().parse(args);
         const results = await batchDeleteTasks(
           a.items.map((it) => ({ listId: it.list_id, taskId: it.task_id }))
         );
         return out(results, a.verbose, (rs) => formatBatchCompact(rs));
       }
       case "list_extensions": {
-        const a = schemas.list_extensions.parse(args);
+        const a = schemas.list_extensions.strict().parse(args);
         const exts = await listTaskExtensions(a.list_id, a.task_id, {
           paginate: a.paginate,
         });
@@ -1071,7 +1077,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         );
       }
       case "set_extension": {
-        const a = schemas.set_extension.parse(args);
+        const a = schemas.set_extension.strict().parse(args);
         const ext = await setTaskExtension(
           a.list_id,
           a.task_id,
@@ -1081,17 +1087,17 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return out(ext, a.verbose, formatExtensionCompact);
       }
       case "delete_extension": {
-        const a = schemas.delete_extension.parse(args);
+        const a = schemas.delete_extension.strict().parse(args);
         await deleteTaskExtension(a.list_id, a.task_id, a.extension_name);
         return text(`Extension ${a.extension_name} deleted.`);
       }
       case "list_overdue_tasks": {
-        const a = schemas.list_overdue_tasks.parse(args ?? {});
+        const a = schemas.list_overdue_tasks.strict().parse(args ?? {});
         const results = await listOverdueTasks(a.top_per_list);
         return out(results, a.verbose, formatSearchCompact);
       }
       case "list_tasks_by_category": {
-        const a = schemas.list_tasks_by_category.parse(args);
+        const a = schemas.list_tasks_by_category.strict().parse(args);
         const results = await listTasksByCategory(a.category, {
           topPerList: a.top_per_list,
           includeCompleted: a.include_completed,
@@ -1099,7 +1105,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return out(results, a.verbose, formatSearchCompact);
       }
       case "bulk_update_categories": {
-        const a = schemas.bulk_update_categories.parse(args);
+        const a = schemas.bulk_update_categories.strict().parse(args);
         const results = await bulkUpdateCategories(
           a.refs.map((r) => ({ listId: r.list_id, taskId: r.task_id })),
           { add: a.add, remove: a.remove }
@@ -1109,7 +1115,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         );
       }
       case "export_tasks_ics": {
-        const a = schemas.export_tasks_ics.parse(args ?? {});
+        const a = schemas.export_tasks_ics.strict().parse(args ?? {});
         const ics = await exportTasksIcs({
           listIds: a.list_ids,
           includeCompleted: a.include_completed,

@@ -6,6 +6,9 @@ import { getAccessToken } from "./auth.js";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
+// Defense in depth: encode any user-provided ID before interpolating into URLs.
+const enc = encodeURIComponent;
+
 // ─── Graph types ───────────────────────────────────────────────────────────
 
 export interface TodoTaskList {
@@ -184,7 +187,7 @@ const DEFAULT_TASK_SELECT =
 const DEFAULT_CHECKLIST_SELECT = "id,displayName,isChecked";
 const DEFAULT_LINKED_SELECT = "id,webUrl,applicationName,displayName,externalId";
 
-const MAX_PAGES = 50;
+const MAX_PAGES = 20; // safety cap (20 × default 100 items = 2000 max); LLM token-conscious
 const BATCH_LIMIT = 20;
 
 async function paginateAll<T>(firstPath: string): Promise<T[]> {
@@ -327,7 +330,7 @@ export async function listTasks(
   if (opts.top) params.set("$top", String(opts.top));
   if (opts.orderby) params.set("$orderby", opts.orderby);
   params.set("$select", opts.select ?? DEFAULT_TASK_SELECT);
-  const path = `/me/todo/lists/${listId}/tasks?${params}`;
+  const path = `/me/todo/lists/${enc(listId)}/tasks?${params}`;
   if (opts.paginate) return paginateAll<TodoTask>(path);
   const data = await graphFetch<GraphCollection<TodoTask>>(path);
   return data.value;
@@ -340,7 +343,7 @@ export async function getTask(
 ): Promise<TodoTask> {
   const select = opts.select ?? DEFAULT_TASK_SELECT;
   return graphFetch<TodoTask>(
-    `/me/todo/lists/${listId}/tasks/${taskId}?$select=${encodeURIComponent(select)}`
+    `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}?$select=${encodeURIComponent(select)}`
   );
 }
 
@@ -350,7 +353,7 @@ export async function createTask(
 ): Promise<TodoTask> {
   const payload = buildTaskPayload(task);
   if (!payload.importance) payload.importance = "normal";
-  return graphFetch<TodoTask>(`/me/todo/lists/${listId}/tasks`, {
+  return graphFetch<TodoTask>(`/me/todo/lists/${enc(listId)}/tasks`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -361,14 +364,14 @@ export async function updateTask(
   taskId: string,
   patch: UpdateTaskInput
 ): Promise<TodoTask> {
-  return graphFetch<TodoTask>(`/me/todo/lists/${listId}/tasks/${taskId}`, {
+  return graphFetch<TodoTask>(`/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}`, {
     method: "PATCH",
     body: JSON.stringify(buildTaskPayload(patch)),
   });
 }
 
 export async function deleteTask(listId: string, taskId: string): Promise<void> {
-  await graphFetch<void>(`/me/todo/lists/${listId}/tasks/${taskId}`, {
+  await graphFetch<void>(`/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}`, {
     method: "DELETE",
   });
 }
@@ -407,6 +410,60 @@ export async function moveTask(
   return recreated;
 }
 
+// ─── Cross-list helper (uses $batch when many lists to reduce HTTP overhead) ─
+
+const PARALLEL_THRESHOLD = 5;
+
+async function fetchTasksAcrossLists(
+  lists: TodoTaskList[],
+  opts: { filter?: string; top?: number } = {}
+): Promise<Array<{ list: TodoTaskList; tasks: TodoTask[]; error?: string }>> {
+  const top = opts.top ?? 25;
+
+  // Few lists: just parallelize direct calls (low HTTP overhead, MSAL refresh once)
+  if (lists.length <= PARALLEL_THRESHOLD) {
+    return Promise.all(
+      lists.map(async (list) => {
+        try {
+          const tasks = await listTasks(list.id, { filter: opts.filter, top });
+          return { list, tasks };
+        } catch (err: any) {
+          return { list, tasks: [] as TodoTask[], error: err.message ?? String(err) };
+        }
+      })
+    );
+  }
+
+  // Many lists: 1 HTTP call via $batch (still chunked by 20 internally)
+  const params = new URLSearchParams();
+  if (opts.filter) params.set("$filter", opts.filter);
+  params.set("$top", String(top));
+  params.set("$select", DEFAULT_TASK_SELECT);
+  const requests: BatchRequest[] = lists.map((list, idx) => ({
+    id: String(idx),
+    method: "GET",
+    url: `/me/todo/lists/${enc(list.id)}/tasks?${params}`,
+  }));
+  const responses = await graphBatch(requests);
+  const results: Array<{ list: TodoTaskList; tasks: TodoTask[]; error?: string }> = new Array(
+    lists.length
+  );
+  for (const r of responses) {
+    const idx = Number(r.id);
+    if (r.status >= 200 && r.status < 300) {
+      const body = r.body as GraphCollection<TodoTask>;
+      results[idx] = { list: lists[idx], tasks: body.value ?? [] };
+    } else {
+      const body = r.body as GraphErrorBody | undefined;
+      const err = body?.error
+        ? `${body.error.code ?? r.status}: ${body.error.message ?? "(no message)"}`
+        : `HTTP ${r.status}`;
+      results[idx] = { list: lists[idx], tasks: [], error: err };
+    }
+  }
+  return results;
+}
+
 // ─── Cross-list search ────────────────────────────────────────────────────
 
 export interface SearchResult {
@@ -423,27 +480,21 @@ export async function searchTasks(
   opts: { topPerList?: number; includeCompleted?: boolean } = {}
 ): Promise<SearchResult[]> {
   const lists = await listTaskLists();
-  const top = opts.topPerList ?? 25;
   const escaped = query.replace(/'/g, "''");
   const filterParts = [`contains(title,'${escaped}')`];
   if (!opts.includeCompleted) filterParts.push("status ne 'completed'");
   const filter = filterParts.join(" and ");
 
-  const results = await Promise.all(
-    lists.map(async (list) => {
-      try {
-        const tasks = await listTasks(list.id, { filter, top });
-        return tasks.map((task) => ({
-          list: { id: list.id, displayName: list.displayName },
-          task,
-        }));
-      } catch {
-        // A failed list (e.g. permission error) doesn't break the global search
-        return [];
-      }
-    })
+  const perList = await fetchTasksAcrossLists(lists, {
+    filter,
+    top: opts.topPerList ?? 25,
+  });
+  return perList.flatMap(({ list, tasks }) =>
+    tasks.map((task) => ({
+      list: { id: list.id, displayName: list.displayName },
+      task,
+    }))
   );
-  return results.flat();
 }
 
 // ─── Summarize today ───────────────────────────────────────────────────────
@@ -468,23 +519,21 @@ export async function summarizeToday(timeZone = "Europe/Paris"): Promise<DailySu
   startOfToday.setUTCHours(0, 0, 0, 0);
 
   const lists = await listTaskLists();
-  const byList = await Promise.all(
-    lists.map(async (list) => {
-      const tasks = await listTasks(list.id, {
-        filter: `status ne 'completed' and dueDateTime/dateTime lt '${startOfTomorrow.toISOString()}'`,
-        top: 100,
-      });
-      const dueToday: TodoTask[] = [];
-      const overdue: TodoTask[] = [];
-      for (const t of tasks) {
-        if (!t.dueDateTime) continue;
-        const due = new Date(t.dueDateTime.dateTime);
-        if (due >= startOfToday && due < startOfTomorrow) dueToday.push(t);
-        else if (due < startOfToday) overdue.push(t);
-      }
-      return { list: { id: list.id, displayName: list.displayName }, dueToday, overdue };
-    })
-  );
+  const perList = await fetchTasksAcrossLists(lists, {
+    filter: `status ne 'completed' and dueDateTime/dateTime lt '${startOfTomorrow.toISOString()}'`,
+    top: 100,
+  });
+  const byList = perList.map(({ list, tasks }) => {
+    const dueToday: TodoTask[] = [];
+    const overdue: TodoTask[] = [];
+    for (const t of tasks) {
+      if (!t.dueDateTime) continue;
+      const due = new Date(t.dueDateTime.dateTime);
+      if (due >= startOfToday && due < startOfTomorrow) dueToday.push(t);
+      else if (due < startOfToday) overdue.push(t);
+    }
+    return { list: { id: list.id, displayName: list.displayName }, dueToday, overdue };
+  });
   const totalDueToday = byList.reduce((s, l) => s + l.dueToday.length, 0);
   const totalOverdue = byList.reduce((s, l) => s + l.overdue.length, 0);
   void timeZone; // accepted for API consistency; "today" derived from now in UTC
@@ -499,7 +548,7 @@ export async function listChecklistItems(
   opts: { select?: string; paginate?: boolean } = {}
 ): Promise<ChecklistItem[]> {
   const select = opts.select ?? DEFAULT_CHECKLIST_SELECT;
-  const path = `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems?$select=${encodeURIComponent(select)}`;
+  const path = `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/checklistItems?$select=${encodeURIComponent(select)}`;
   if (opts.paginate) return paginateAll<ChecklistItem>(path);
   const data = await graphFetch<GraphCollection<ChecklistItem>>(path);
   return data.value;
@@ -512,7 +561,7 @@ export async function createChecklistItem(
   isChecked = false
 ): Promise<ChecklistItem> {
   return graphFetch<ChecklistItem>(
-    `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems`,
+    `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/checklistItems`,
     {
       method: "POST",
       body: JSON.stringify({ displayName, isChecked }),
@@ -527,7 +576,7 @@ export async function updateChecklistItem(
   patch: { displayName?: string; isChecked?: boolean }
 ): Promise<ChecklistItem> {
   return graphFetch<ChecklistItem>(
-    `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`,
+    `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/checklistItems/${enc(itemId)}`,
     {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -541,7 +590,7 @@ export async function deleteChecklistItem(
   itemId: string
 ): Promise<void> {
   await graphFetch<void>(
-    `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems/${itemId}`,
+    `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/checklistItems/${enc(itemId)}`,
     { method: "DELETE" }
   );
 }
@@ -554,7 +603,7 @@ export async function listLinkedResources(
   opts: { select?: string; paginate?: boolean } = {}
 ): Promise<LinkedResource[]> {
   const select = opts.select ?? DEFAULT_LINKED_SELECT;
-  const path = `/me/todo/lists/${listId}/tasks/${taskId}/linkedResources?$select=${encodeURIComponent(select)}`;
+  const path = `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/linkedResources?$select=${encodeURIComponent(select)}`;
   if (opts.paginate) return paginateAll<LinkedResource>(path);
   const data = await graphFetch<GraphCollection<LinkedResource>>(path);
   return data.value;
@@ -571,7 +620,7 @@ export async function createLinkedResource(
   }
 ): Promise<LinkedResource> {
   return graphFetch<LinkedResource>(
-    `/me/todo/lists/${listId}/tasks/${taskId}/linkedResources`,
+    `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/linkedResources`,
     {
       method: "POST",
       body: JSON.stringify(resource),
@@ -585,7 +634,7 @@ export async function deleteLinkedResource(
   resourceId: string
 ): Promise<void> {
   await graphFetch<void>(
-    `/me/todo/lists/${listId}/tasks/${taskId}/linkedResources/${resourceId}`,
+    `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/linkedResources/${enc(resourceId)}`,
     { method: "DELETE" }
   );
 }
@@ -610,7 +659,7 @@ export async function batchCreateTasks(
     return {
       id: String(idx),
       method: "POST",
-      url: `/me/todo/lists/${item.listId}/tasks`,
+      url: `/me/todo/lists/${enc(item.listId)}/tasks`,
       body: payload,
     };
   });
@@ -624,7 +673,7 @@ export async function batchCompleteTasks(
   const requests: BatchRequest[] = items.map((item, idx) => ({
     id: String(idx),
     method: "PATCH",
-    url: `/me/todo/lists/${item.listId}/tasks/${item.taskId}`,
+    url: `/me/todo/lists/${enc(item.listId)}/tasks/${enc(item.taskId)}`,
     body: { status: "completed" },
   }));
   const responses = await graphBatch(requests);
@@ -637,7 +686,7 @@ export async function batchDeleteTasks(
   const requests: BatchRequest[] = items.map((item, idx) => ({
     id: String(idx),
     method: "DELETE",
-    url: `/me/todo/lists/${item.listId}/tasks/${item.taskId}`,
+    url: `/me/todo/lists/${enc(item.listId)}/tasks/${enc(item.taskId)}`,
   }));
   const responses = await graphBatch(requests);
   return parseBatchResponses<null>(responses, items.length);
@@ -656,7 +705,7 @@ export async function listTaskExtensions(
   taskId: string,
   opts: { paginate?: boolean } = {}
 ): Promise<OpenExtension[]> {
-  const path = `/me/todo/lists/${listId}/tasks/${taskId}/extensions`;
+  const path = `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/extensions`;
   if (opts.paginate) return paginateAll<OpenExtension>(path);
   const data = await graphFetch<GraphCollection<OpenExtension>>(path);
   return data.value;
@@ -669,7 +718,7 @@ export async function setTaskExtension(
   data: Record<string, unknown>
 ): Promise<OpenExtension> {
   // Upsert : PATCH si existe, POST sinon (404)
-  const patchPath = `/me/todo/lists/${listId}/tasks/${taskId}/extensions/${extensionName}`;
+  const patchPath = `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/extensions/${enc(extensionName)}`;
   try {
     return await graphFetch<OpenExtension>(patchPath, {
       method: "PATCH",
@@ -678,7 +727,7 @@ export async function setTaskExtension(
   } catch (err) {
     if (err instanceof Error && /Graph 404/.test(err.message)) {
       return graphFetch<OpenExtension>(
-        `/me/todo/lists/${listId}/tasks/${taskId}/extensions`,
+        `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/extensions`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -699,7 +748,7 @@ export async function deleteTaskExtension(
   extensionName: string
 ): Promise<void> {
   await graphFetch<void>(
-    `/me/todo/lists/${listId}/tasks/${taskId}/extensions/${extensionName}`,
+    `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/extensions/${enc(extensionName)}`,
     { method: "DELETE" }
   );
 }
@@ -713,20 +762,13 @@ export async function listOverdueTasks(
   const cutoff = new Date();
   cutoff.setUTCHours(0, 0, 0, 0);
   const filter = `status ne 'completed' and dueDateTime/dateTime lt '${cutoff.toISOString()}'`;
-  const results = await Promise.all(
-    lists.map(async (list) => {
-      try {
-        const tasks = await listTasks(list.id, { filter, top: topPerList });
-        return tasks.map((task) => ({
-          list: { id: list.id, displayName: list.displayName },
-          task,
-        }));
-      } catch {
-        return [];
-      }
-    })
+  const perList = await fetchTasksAcrossLists(lists, { filter, top: topPerList });
+  return perList.flatMap(({ list, tasks }) =>
+    tasks.map((task) => ({
+      list: { id: list.id, displayName: list.displayName },
+      task,
+    }))
   );
-  return results.flat();
 }
 
 export async function listTasksByCategory(
@@ -738,21 +780,16 @@ export async function listTasksByCategory(
   const filterParts = [`categories/any(c: c eq '${escaped}')`];
   if (!opts.includeCompleted) filterParts.push("status ne 'completed'");
   const filter = filterParts.join(" and ");
-  const top = opts.topPerList ?? 50;
-  const results = await Promise.all(
-    lists.map(async (list) => {
-      try {
-        const tasks = await listTasks(list.id, { filter, top });
-        return tasks.map((task) => ({
-          list: { id: list.id, displayName: list.displayName },
-          task,
-        }));
-      } catch {
-        return [];
-      }
-    })
+  const perList = await fetchTasksAcrossLists(lists, {
+    filter,
+    top: opts.topPerList ?? 50,
+  });
+  return perList.flatMap(({ list, tasks }) =>
+    tasks.map((task) => ({
+      list: { id: list.id, displayName: list.displayName },
+      task,
+    }))
   );
-  return results.flat();
 }
 
 export async function bulkUpdateCategories(
@@ -763,7 +800,7 @@ export async function bulkUpdateCategories(
   const getRequests: BatchRequest[] = refs.map((ref, idx) => ({
     id: String(idx),
     method: "GET",
-    url: `/me/todo/lists/${ref.listId}/tasks/${ref.taskId}?$select=id,categories`,
+    url: `/me/todo/lists/${enc(ref.listId)}/tasks/${enc(ref.taskId)}?$select=id,categories`,
   }));
   const getResponses = await graphBatch(getRequests);
   const final: Array<BatchResultItem<TodoTask>> = new Array(refs.length);
@@ -788,7 +825,7 @@ export async function bulkUpdateCategories(
     patchRequests.push({
       id: String(idx),
       method: "PATCH",
-      url: `/me/todo/lists/${refs[idx].listId}/tasks/${refs[idx].taskId}`,
+      url: `/me/todo/lists/${enc(refs[idx].listId)}/tasks/${enc(refs[idx].taskId)}`,
       body: { categories: Array.from(current) },
     });
   }

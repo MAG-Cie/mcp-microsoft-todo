@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-05-04
+
+### Security
+- **Bumped `@azure/msal-node` from `^2.16.0` to `^5.1.5`** to fix the moderate-severity transitive `uuid<14` vulnerability (CVE GHSA-w5hq-g745-h8pq, missing buffer bounds check, CWE-787). `npm audit` now reports zero vulnerabilities.
+- **Defense in depth**: every Graph URL now wraps user-provided IDs (`listId`, `taskId`, `itemId`, `resourceId`, `extensionName`) with `encodeURIComponent` to prevent any path injection even with malformed inputs.
+- **Token cache hardening**: `~/.mcp-microsoft-todo/token-cache.json` is now `chmod 0600` after every write (no-op on Windows, best-effort elsewhere) — token = bearer credential, owner-read/write only.
+- **Zod strict mode** on every MCP tool schema — unknown/extra arguments are now rejected with a clear validation error instead of silently stripped, blocking LLM-hallucinated args from reaching the Graph API.
+- **`extension_name` regex** restricted to `^[A-Za-z0-9._-]+$` (max 120 chars) — even though URLs are now encoded, this rejects garbage at the validation layer rather than relying solely on Graph API rejection.
+
+### Performance
+- **Cross-list helpers now use Graph `$batch` when more than 5 lists** (`summarize_today`, `search_tasks`, `list_overdue_tasks`, `list_tasks_by_category`). One HTTP call instead of N parallel — significantly reduces connection overhead and rate-limit risk on accounts with many lists. Per-list errors still don't fail the global aggregate.
+- **`MAX_PAGES` reduced from 50 to 20** in `paginateAll` (≈2000 items max instead of 5000) — tighter guardrail against LLM context exhaustion when `paginate: true` is used carelessly.
+
+### Changed
+- Bump version `1.0.0` → `1.0.1`
+- `paginate` parameter description updated with explicit warning: "Use sparingly — large result sets may exhaust the LLM context window."
+
 ## [1.0.0] - 2026-05-04
 
 ### Added
