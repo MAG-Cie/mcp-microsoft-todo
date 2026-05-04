@@ -4,6 +4,29 @@ Toutes les modifications notables de ce projet seront documentées ici.
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le projet adhère à [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-04
+
+### Added
+- **Open extensions** : 3 nouveaux outils pour attacher des metadata JSON arbitraires aux tâches
+  - `list_extensions` : lister les open extensions d'une tâche (paginate supporté)
+  - `set_extension` : upsert (PATCH si existe, POST sinon) — permet de stocker `{project_id, external_ref, custom_flags...}` qui persistent dans Microsoft Graph
+  - `delete_extension` : retirer une extension
+- **Cross-list helpers** :
+  - `list_overdue_tasks` : agrège toutes les tâches en retard (status ne completed et dueDateTime < today) sur l'ensemble des listes
+  - `list_tasks_by_category` : filtre OData `categories/any(c: c eq 'X')` cross-listes, échappe apostrophes
+  - `bulk_update_categories` : ajoute/retire des catégories à plusieurs tâches en 2 phases batch (GET courantes + PATCH set mis à jour)
+- **`export_tasks_ics`** : export iCalendar (text/calendar avec VTODO) compatible Google Calendar, Apple Calendar, Outlook, Thunderbird
+  - Recurrence convertie en RRULE (FREQ + INTERVAL + BYDAY pour weekly, BYMONTHDAY pour absoluteMonthly, UNTIL/COUNT pour range endDate/numbered)
+  - Reminder converti en VALARM avec TRIGGER VALUE=DATE-TIME
+  - Importance haute/basse → PRIORITY 1/9, status → STATUS NEEDS-ACTION/IN-PROCESS/COMPLETED
+  - Échappement RFC 5545 : `\\`, `,`, `;`, `\n`
+- 7 nouveaux tests vitest (26 total) : extensions upsert PATCH→POST fallback, listOverdueTasks filter, listTasksByCategory escape, bulkUpdateCategories phases, export ICS structure VCALENDAR/VTODO/RRULE/VALARM
+- README utilisateur étoffé : sections détaillées Claude Code / Claude Desktop / Cursor avec install + premier auth + update + désinstall, table de troubleshooting auth
+
+### Changed
+- Bump version `0.4.0` → `0.5.0`
+- Roadmap mise à jour : v0.5 cochée, prochaine étape v1.0 stable milestone
+
 ## [0.4.0] - 2026-05-04
 
 ### Added

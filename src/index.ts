@@ -31,9 +31,17 @@ import {
   batchCreateTasks,
   batchCompleteTasks,
   batchDeleteTasks,
+  listTaskExtensions,
+  setTaskExtension,
+  deleteTaskExtension,
+  listOverdueTasks,
+  listTasksByCategory,
+  bulkUpdateCategories,
+  exportTasksIcs,
   type PatternedRecurrence,
   type BatchResultItem,
   type CreateTaskInput,
+  type OpenExtension,
   type TodoTask,
   type TodoTaskList,
   type ChecklistItem,
@@ -119,6 +127,16 @@ function formatSearchCompact(results: SearchResult[]): string {
   return lines.join("\n");
 }
 
+function formatExtensionCompact(e: OpenExtension): string {
+  const customProps = Object.entries(e)
+    .filter(
+      ([k]) =>
+        !k.startsWith("@odata") && k !== "id" && k !== "extensionName"
+    )
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`);
+  return `${e.id} name:${e.extensionName}${customProps.length ? " " + customProps.join(" ") : ""}`;
+}
+
 function formatBatchCompact<T>(
   results: BatchResultItem<T>[],
   formatItem?: (item: T) => string
@@ -165,7 +183,7 @@ function formatSummaryCompact(s: DailySummary): string {
 }
 
 const server = new Server(
-  { name: "microsoft-todo", version: "0.4.0" },
+  { name: "microsoft-todo", version: "0.5.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -381,6 +399,60 @@ const schemas = {
       .min(1)
       .max(100),
     ...verboseField,
+  }),
+  list_extensions: z.object({
+    list_id: z.string(),
+    task_id: z.string(),
+    ...verboseField,
+    ...paginateField,
+  }),
+  set_extension: z.object({
+    list_id: z.string(),
+    task_id: z.string(),
+    extension_name: z
+      .string()
+      .min(1)
+      .describe(
+        "Nom unique de l'extension, idéalement reverse-DNS, ex: 'com.example.mydata'"
+      ),
+    data: z
+      .record(z.unknown())
+      .describe(
+        "Objet JSON arbitraire (clés/valeurs) à stocker. Upsert : remplace si extension existe."
+      ),
+    ...verboseField,
+  }),
+  delete_extension: z.object({
+    list_id: z.string(),
+    task_id: z.string(),
+    extension_name: z.string().min(1),
+  }),
+  list_overdue_tasks: z.object({
+    top_per_list: z.number().int().positive().max(100).optional(),
+    ...verboseField,
+  }),
+  list_tasks_by_category: z.object({
+    category: z.string().min(1),
+    top_per_list: z.number().int().positive().max(100).optional(),
+    include_completed: z.boolean().optional(),
+    ...verboseField,
+  }),
+  bulk_update_categories: z.object({
+    refs: z
+      .array(z.object({ list_id: z.string(), task_id: z.string() }))
+      .min(1)
+      .max(100),
+    add: z.array(z.string()).optional(),
+    remove: z.array(z.string()).optional(),
+    ...verboseField,
+  }),
+  export_tasks_ics: z.object({
+    list_ids: z
+      .array(z.string())
+      .optional()
+      .describe("Restreint aux listes spécifiées. Si omis : toutes les listes."),
+    include_completed: z.boolean().optional(),
+    top_per_list: z.number().int().positive().max(500).optional(),
   }),
 };
 
@@ -794,6 +866,124 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["items"],
       },
     },
+    {
+      name: "list_extensions",
+      description:
+        "Liste les open extensions (metadata custom JSON arbitraire) attachées à une tâche.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          list_id: { type: "string" },
+          task_id: { type: "string" },
+          ...verboseJsonProp,
+          ...paginateJsonProp,
+        },
+        required: ["list_id", "task_id"],
+      },
+    },
+    {
+      name: "set_extension",
+      description:
+        "Crée ou met à jour (upsert) une open extension sur une tâche. Permet d'attacher des metadata JSON arbitraires (project_id, external_ref, custom flags...) qui persistent dans Microsoft Graph.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          list_id: { type: "string" },
+          task_id: { type: "string" },
+          extension_name: {
+            type: "string",
+            description:
+              "Nom unique, idéalement reverse-DNS, ex: 'com.example.mydata'",
+          },
+          data: {
+            type: "object",
+            description: "Objet JSON arbitraire à stocker",
+            additionalProperties: true,
+          },
+          ...verboseJsonProp,
+        },
+        required: ["list_id", "task_id", "extension_name", "data"],
+      },
+    },
+    {
+      name: "delete_extension",
+      description: "Supprime une open extension d'une tâche.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          list_id: { type: "string" },
+          task_id: { type: "string" },
+          extension_name: { type: "string" },
+        },
+        required: ["list_id", "task_id", "extension_name"],
+      },
+    },
+    {
+      name: "list_overdue_tasks",
+      description:
+        "Liste TOUTES les tâches en retard (status ne completed et dueDateTime < aujourd'hui) sur l'ensemble des listes. Agrégé via Promise.all.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          top_per_list: { type: "number" },
+          ...verboseJsonProp,
+        },
+      },
+    },
+    {
+      name: "list_tasks_by_category",
+      description:
+        "Liste TOUTES les tâches qui contiennent une catégorie donnée, sur l'ensemble des listes. Filter OData : categories/any(c: c eq '...').",
+      inputSchema: {
+        type: "object",
+        properties: {
+          category: { type: "string" },
+          top_per_list: { type: "number" },
+          include_completed: { type: "boolean" },
+          ...verboseJsonProp,
+        },
+        required: ["category"],
+      },
+    },
+    {
+      name: "bulk_update_categories",
+      description:
+        "Ajoute/retire des catégories à plusieurs tâches en un appel. 2 phases batch : GET pour lire les catégories existantes, puis PATCH avec le set mis à jour. Erreurs par item.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          refs: {
+            type: "array",
+            maxItems: 100,
+            items: {
+              type: "object",
+              properties: {
+                list_id: { type: "string" },
+                task_id: { type: "string" },
+              },
+              required: ["list_id", "task_id"],
+            },
+          },
+          add: { type: "array", items: { type: "string" } },
+          remove: { type: "array", items: { type: "string" } },
+          ...verboseJsonProp,
+        },
+        required: ["refs"],
+      },
+    },
+    {
+      name: "export_tasks_ics",
+      description:
+        "Exporte les tâches au format iCalendar (text/calendar VTODO) pour import dans Google Calendar, Apple Calendar, Outlook, Thunderbird, etc. Recurrence convertie en RRULE quand possible. Reminder converti en VALARM.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          list_ids: { type: "array", items: { type: "string" } },
+          include_completed: { type: "boolean" },
+          top_per_list: { type: "number" },
+        },
+      },
+    },
   ],
 }));
 
@@ -993,6 +1183,64 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           a.items.map((it) => ({ listId: it.list_id, taskId: it.task_id }))
         );
         return out(results, a.verbose, (rs) => formatBatchCompact(rs));
+      }
+      case "list_extensions": {
+        const a = schemas.list_extensions.parse(args);
+        const exts = await listTaskExtensions(a.list_id, a.task_id, {
+          paginate: a.paginate,
+        });
+        return out(exts, a.verbose, (xs) =>
+          xs.length === 0
+            ? "Aucune extension."
+            : xs.map(formatExtensionCompact).join("\n")
+        );
+      }
+      case "set_extension": {
+        const a = schemas.set_extension.parse(args);
+        const ext = await setTaskExtension(
+          a.list_id,
+          a.task_id,
+          a.extension_name,
+          a.data
+        );
+        return out(ext, a.verbose, formatExtensionCompact);
+      }
+      case "delete_extension": {
+        const a = schemas.delete_extension.parse(args);
+        await deleteTaskExtension(a.list_id, a.task_id, a.extension_name);
+        return text(`Extension ${a.extension_name} supprimée.`);
+      }
+      case "list_overdue_tasks": {
+        const a = schemas.list_overdue_tasks.parse(args ?? {});
+        const results = await listOverdueTasks(a.top_per_list);
+        return out(results, a.verbose, formatSearchCompact);
+      }
+      case "list_tasks_by_category": {
+        const a = schemas.list_tasks_by_category.parse(args);
+        const results = await listTasksByCategory(a.category, {
+          topPerList: a.top_per_list,
+          includeCompleted: a.include_completed,
+        });
+        return out(results, a.verbose, formatSearchCompact);
+      }
+      case "bulk_update_categories": {
+        const a = schemas.bulk_update_categories.parse(args);
+        const results = await bulkUpdateCategories(
+          a.refs.map((r) => ({ listId: r.list_id, taskId: r.task_id })),
+          { add: a.add, remove: a.remove }
+        );
+        return out(results, a.verbose, (rs) =>
+          formatBatchCompact(rs, formatTaskCompact)
+        );
+      }
+      case "export_tasks_ics": {
+        const a = schemas.export_tasks_ics.parse(args ?? {});
+        const ics = await exportTasksIcs({
+          listIds: a.list_ids,
+          includeCompleted: a.include_completed,
+          topPerList: a.top_per_list,
+        });
+        return text(ics);
       }
       default:
         throw new Error(`Outil inconnu: ${name}`);

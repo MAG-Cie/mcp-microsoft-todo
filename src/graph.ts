@@ -643,6 +643,317 @@ export async function batchDeleteTasks(
   return parseBatchResponses<null>(responses, items.length);
 }
 
+// ─── Open extensions (custom JSON metadata sur tâches) ────────────────────
+
+export interface OpenExtension {
+  id: string;
+  extensionName: string;
+  [key: string]: unknown;
+}
+
+export async function listTaskExtensions(
+  listId: string,
+  taskId: string,
+  opts: { paginate?: boolean } = {}
+): Promise<OpenExtension[]> {
+  const path = `/me/todo/lists/${listId}/tasks/${taskId}/extensions`;
+  if (opts.paginate) return paginateAll<OpenExtension>(path);
+  const data = await graphFetch<GraphCollection<OpenExtension>>(path);
+  return data.value;
+}
+
+export async function setTaskExtension(
+  listId: string,
+  taskId: string,
+  extensionName: string,
+  data: Record<string, unknown>
+): Promise<OpenExtension> {
+  // Upsert : PATCH si existe, POST sinon (404)
+  const patchPath = `/me/todo/lists/${listId}/tasks/${taskId}/extensions/${extensionName}`;
+  try {
+    return await graphFetch<OpenExtension>(patchPath, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  } catch (err) {
+    if (err instanceof Error && /Graph 404/.test(err.message)) {
+      return graphFetch<OpenExtension>(
+        `/me/todo/lists/${listId}/tasks/${taskId}/extensions`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            "@odata.type": "microsoft.graph.openTypeExtension",
+            extensionName,
+            ...data,
+          }),
+        }
+      );
+    }
+    throw err;
+  }
+}
+
+export async function deleteTaskExtension(
+  listId: string,
+  taskId: string,
+  extensionName: string
+): Promise<void> {
+  await graphFetch<void>(
+    `/me/todo/lists/${listId}/tasks/${taskId}/extensions/${extensionName}`,
+    { method: "DELETE" }
+  );
+}
+
+// ─── Cross-list helpers ────────────────────────────────────────────────────
+
+export async function listOverdueTasks(
+  topPerList = 50
+): Promise<SearchResult[]> {
+  const lists = await listTaskLists();
+  const cutoff = new Date();
+  cutoff.setUTCHours(0, 0, 0, 0);
+  const filter = `status ne 'completed' and dueDateTime/dateTime lt '${cutoff.toISOString()}'`;
+  const results = await Promise.all(
+    lists.map(async (list) => {
+      try {
+        const tasks = await listTasks(list.id, { filter, top: topPerList });
+        return tasks.map((task) => ({
+          list: { id: list.id, displayName: list.displayName },
+          task,
+        }));
+      } catch {
+        return [];
+      }
+    })
+  );
+  return results.flat();
+}
+
+export async function listTasksByCategory(
+  category: string,
+  opts: { topPerList?: number; includeCompleted?: boolean } = {}
+): Promise<SearchResult[]> {
+  const lists = await listTaskLists();
+  const escaped = category.replace(/'/g, "''");
+  const filterParts = [`categories/any(c: c eq '${escaped}')`];
+  if (!opts.includeCompleted) filterParts.push("status ne 'completed'");
+  const filter = filterParts.join(" and ");
+  const top = opts.topPerList ?? 50;
+  const results = await Promise.all(
+    lists.map(async (list) => {
+      try {
+        const tasks = await listTasks(list.id, { filter, top });
+        return tasks.map((task) => ({
+          list: { id: list.id, displayName: list.displayName },
+          task,
+        }));
+      } catch {
+        return [];
+      }
+    })
+  );
+  return results.flat();
+}
+
+export async function bulkUpdateCategories(
+  refs: Array<{ listId: string; taskId: string }>,
+  changes: { add?: string[]; remove?: string[] }
+): Promise<Array<BatchResultItem<TodoTask>>> {
+  // Phase 1 : GET (batch) pour récupérer les categories courantes
+  const getRequests: BatchRequest[] = refs.map((ref, idx) => ({
+    id: String(idx),
+    method: "GET",
+    url: `/me/todo/lists/${ref.listId}/tasks/${ref.taskId}?$select=id,categories`,
+  }));
+  const getResponses = await graphBatch(getRequests);
+  const final: Array<BatchResultItem<TodoTask>> = new Array(refs.length);
+
+  // Phase 2 : construire les PATCH pour les GETs réussis
+  const patchRequests: BatchRequest[] = [];
+  for (const r of getResponses) {
+    const idx = Number(r.id);
+    if (r.status < 200 || r.status >= 300) {
+      final[idx] = {
+        index: idx,
+        status: r.status,
+        ok: false,
+        error: `GET failed: HTTP ${r.status}`,
+      };
+      continue;
+    }
+    const task = r.body as { categories?: string[] };
+    const current = new Set(task.categories ?? []);
+    for (const c of changes.add ?? []) current.add(c);
+    for (const c of changes.remove ?? []) current.delete(c);
+    patchRequests.push({
+      id: String(idx),
+      method: "PATCH",
+      url: `/me/todo/lists/${refs[idx].listId}/tasks/${refs[idx].taskId}`,
+      body: { categories: Array.from(current) },
+    });
+  }
+
+  if (patchRequests.length > 0) {
+    const patchResponses = await graphBatch(patchRequests);
+    for (const r of patchResponses) {
+      const idx = Number(r.id);
+      const ok = r.status >= 200 && r.status < 300;
+      let error: string | undefined;
+      if (!ok) {
+        const body = r.body as GraphErrorBody | string | undefined;
+        if (typeof body === "object" && body && "error" in body && body.error) {
+          error = body.error.code
+            ? `${body.error.code}: ${body.error.message ?? "(no message)"}`
+            : body.error.message ?? `HTTP ${r.status}`;
+        } else if (typeof body === "string") {
+          error = body;
+        } else {
+          error = `HTTP ${r.status}`;
+        }
+      }
+      final[idx] = {
+        index: idx,
+        status: r.status,
+        ok,
+        result: ok ? (r.body as TodoTask) : undefined,
+        error,
+      };
+    }
+  }
+  return final;
+}
+
+// ─── Export iCalendar (text/calendar) ──────────────────────────────────────
+
+function escapeIcsText(s: string): string {
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/[,;]/g, "\\$&")
+    .replace(/\r?\n/g, "\\n");
+}
+
+function formatIcsDate(iso: string): string {
+  // "2026-05-04T18:00:00" ou "...Z" → "20260504T180000Z"
+  const cleaned = iso.replace(/\.\d+/, "").replace(/Z$/, "");
+  // Découpage "YYYY-MM-DDTHH:MM:SS"
+  const m = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return cleaned.replace(/[-:]/g, "");
+  return `${m[1]}${m[2]}${m[3]}T${m[4]}${m[5]}${m[6]}Z`;
+}
+
+function recurrenceToRRule(r: PatternedRecurrence): string | null {
+  const parts: string[] = [];
+  switch (r.pattern.type) {
+    case "daily":
+      parts.push("FREQ=DAILY");
+      break;
+    case "weekly":
+      parts.push("FREQ=WEEKLY");
+      if (r.pattern.daysOfWeek?.length) {
+        const map: Record<DayOfWeek, string> = {
+          monday: "MO",
+          tuesday: "TU",
+          wednesday: "WE",
+          thursday: "TH",
+          friday: "FR",
+          saturday: "SA",
+          sunday: "SU",
+        };
+        parts.push(`BYDAY=${r.pattern.daysOfWeek.map((d) => map[d]).join(",")}`);
+      }
+      break;
+    case "absoluteMonthly":
+      parts.push("FREQ=MONTHLY");
+      if (r.pattern.dayOfMonth) parts.push(`BYMONTHDAY=${r.pattern.dayOfMonth}`);
+      break;
+    case "absoluteYearly":
+      parts.push("FREQ=YEARLY");
+      break;
+    default:
+      return null; // relativeMonthly/Yearly trop complexes
+  }
+  if (r.pattern.interval > 1) parts.push(`INTERVAL=${r.pattern.interval}`);
+  if (r.range.type === "endDate" && r.range.endDate) {
+    parts.push(`UNTIL=${r.range.endDate.replace(/-/g, "")}T235959Z`);
+  } else if (r.range.type === "numbered" && r.range.numberOfOccurrences) {
+    parts.push(`COUNT=${r.range.numberOfOccurrences}`);
+  }
+  return parts.join(";");
+}
+
+export async function exportTasksIcs(
+  opts: {
+    listIds?: string[];
+    includeCompleted?: boolean;
+    topPerList?: number;
+  } = {}
+): Promise<string> {
+  const allLists = await listTaskLists();
+  const lists = opts.listIds
+    ? allLists.filter((l) => opts.listIds!.includes(l.id))
+    : allLists;
+
+  const filterParts: string[] = [];
+  if (!opts.includeCompleted) filterParts.push("status ne 'completed'");
+  const filter = filterParts.length > 0 ? filterParts.join(" and ") : undefined;
+  const top = opts.topPerList ?? 100;
+
+  const lines: string[] = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//mag-cie//mcp-microsoft-todo//FR",
+    "CALSCALE:GREGORIAN",
+  ];
+  const now = formatIcsDate(new Date().toISOString());
+
+  for (const list of lists) {
+    let tasks: TodoTask[] = [];
+    try {
+      tasks = await listTasks(list.id, { filter, top });
+    } catch {
+      continue;
+    }
+    for (const task of tasks) {
+      lines.push("BEGIN:VTODO");
+      lines.push(`UID:${task.id}@mcp-microsoft-todo`);
+      lines.push(`DTSTAMP:${now}`);
+      lines.push(
+        `SUMMARY:${escapeIcsText(`[${list.displayName}] ${task.title}`)}`
+      );
+      if (task.body?.content)
+        lines.push(`DESCRIPTION:${escapeIcsText(task.body.content)}`);
+      if (task.dueDateTime)
+        lines.push(`DUE:${formatIcsDate(task.dueDateTime.dateTime)}`);
+      if (task.status === "completed") lines.push("STATUS:COMPLETED");
+      else if (task.status === "inProgress") lines.push("STATUS:IN-PROCESS");
+      else lines.push("STATUS:NEEDS-ACTION");
+      if (task.importance === "high") lines.push("PRIORITY:1");
+      else if (task.importance === "low") lines.push("PRIORITY:9");
+      if (task.categories?.length) {
+        lines.push(
+          `CATEGORIES:${task.categories.map(escapeIcsText).join(",")}`
+        );
+      }
+      if (task.recurrence) {
+        const rrule = recurrenceToRRule(task.recurrence);
+        if (rrule) lines.push(`RRULE:${rrule}`);
+      }
+      if (task.isReminderOn && task.reminderDateTime) {
+        lines.push("BEGIN:VALARM");
+        lines.push("ACTION:DISPLAY");
+        lines.push(
+          `TRIGGER;VALUE=DATE-TIME:${formatIcsDate(task.reminderDateTime.dateTime)}`
+        );
+        lines.push("DESCRIPTION:Reminder");
+        lines.push("END:VALARM");
+      }
+      lines.push("END:VTODO");
+    }
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
 function parseBatchResponses<T>(
   responses: BatchResponse[],
   expectedCount: number

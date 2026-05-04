@@ -6,19 +6,87 @@ Marche avec **n'importe quel compte Microsoft** : perso (outlook.com, hotmail.co
 
 ---
 
-## 🚀 Installation utilisateur final (30 sec)
+## 🚀 Installation utilisateur final
 
-### Claude Code
+### Pré-requis (commun à tous les clients)
+
+- **Node.js 20+** installé sur ta machine ([nodejs.org](https://nodejs.org))
+- Un compte Microsoft (gratuit ou pro)
+
+Pas de compte Azure requis, pas d'App Registration à créer, rien à compiler.
+
+---
+
+### 🟦 Claude Code (CLI)
+
+**Install (1 commande) :**
 
 ```bash
 claude mcp add --transport stdio microsoft-todo -- npx -y @mag-cie/mcp-microsoft-todo
 ```
 
-Au premier appel d'un outil, le serveur affiche dans les logs un code à entrer sur https://microsoft.com/devicelogin avec ton compte Microsoft. Une fois fait, le token est mis en cache et refresh automatique ensuite.
+Si tu as un **compte Microsoft personnel** (outlook.com, hotmail.com, live.com, msn.com, Office 365 perso), ajoute `MS_TENANT=consumers` :
 
-### Claude Desktop (config JSON)
+```bash
+claude mcp add --transport stdio microsoft-todo --env MS_TENANT=consumers -- npx -y @mag-cie/mcp-microsoft-todo
+```
 
-Dans `claude_desktop_config.json` :
+**Vérifier que c'est branché :**
+
+```bash
+claude mcp list
+```
+
+**Première utilisation :** lance `claude`, puis tape un prompt qui appelle un outil :
+
+> Liste mes tâches Microsoft To Do
+
+Au premier appel, le serveur affiche dans les logs MCP :
+
+```
+To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code XXXXXXXXX
+```
+
+Va sur l'URL, entre le code, sign-in. Le token est mis en cache dans `~/.mcp-microsoft-todo/token-cache.json` et refresh automatique ensuite — tu n'as plus jamais à faire ça.
+
+**Mettre à jour vers la dernière version :**
+
+```bash
+# Force un re-install fresh de la dernière version npm
+claude mcp remove microsoft-todo
+claude mcp add --transport stdio microsoft-todo -- npx -y @mag-cie/mcp-microsoft-todo@latest
+```
+
+Le flag `-y` de npx accepte automatiquement le téléchargement. Si tu omets `@latest`, npx peut servir une version cachée plus ancienne.
+
+**Désinstaller :**
+
+```bash
+claude mcp remove microsoft-todo
+# Et purger le token cache :
+rm -rf ~/.mcp-microsoft-todo
+```
+
+---
+
+### 🟪 Claude Desktop (app)
+
+**1. Localiser le fichier de config :**
+
+| OS | Chemin |
+|---|---|
+| **Windows** | `%APPDATA%\Claude\claude_desktop_config.json` |
+| **macOS** | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| **Linux** | `~/.config/Claude/claude_desktop_config.json` |
+
+Sur Windows, tu peux y aller direct avec :
+```powershell
+notepad $env:APPDATA\Claude\claude_desktop_config.json
+```
+
+Si le fichier n'existe pas, crée-le avec un objet JSON vide `{}` puis édite.
+
+**2. Ajouter la config :**
 
 ```json
 {
@@ -31,20 +99,9 @@ Dans `claude_desktop_config.json` :
 }
 ```
 
-Redémarre Claude Desktop. Premier appel → message device code dans les logs MCP.
+Pour un compte Microsoft personnel, ajoute `env` :
 
-### Pré-requis
-
-- **Node.js 20+** installé sur ta machine
-- Un compte Microsoft (gratuit ou pro)
-
-C'est tout. Pas de compte Azure, pas d'App Registration, rien.
-
-### Troubleshooting auth
-
-Si tu utilises un compte Microsoft **personnel** (outlook.com, hotmail.com, live.com, msn.com, Office 365 perso) et que l'auth échoue avec une page "Cette page n'est pas la bonne" après le sign-in, ajoute la variable `MS_TENANT=consumers` :
-
-```jsonc
+```json
 {
   "mcpServers": {
     "microsoft-todo": {
@@ -56,9 +113,67 @@ Si tu utilises un compte Microsoft **personnel** (outlook.com, hotmail.com, live
 }
 ```
 
-Le défaut `common` couvre comptes pro + perso, mais l'endpoint `consumers` est plus fiable pour les comptes purement personnels (évite les conflits de session navigateur entre plusieurs comptes Microsoft).
+**3. Redémarrer Claude Desktop COMPLÈTEMENT** (pas juste fermer la fenêtre) :
+- **Windows** : clic droit sur l'icône systray → Quit, puis relancer
+- **macOS** : ⌘+Q puis relancer
 
-Astuce : utilise une fenêtre **InPrivate/Incognito** pour le sign-in initial, ça évite que ton browser sélectionne automatiquement le mauvais compte si tu en as plusieurs.
+**4. Vérifier que c'est branché :**
+
+Dans Claude Desktop, regarde l'icône **🔌 prise** ou **🔧 outils** en bas à droite de la zone de saisie — tu dois voir `microsoft-todo` listé.
+
+**5. Première auth :**
+
+⚠️ Claude Desktop n'expose pas les logs MCP de façon évidente. Le device code apparaît dans :
+- **Windows** : `%APPDATA%\Claude\logs\mcp-server-microsoft-todo.log`
+- **macOS** : `~/Library/Logs/Claude/mcp-server-microsoft-todo.log`
+
+**Astuce plus simple — pré-générer le token cache :**
+
+Avant de configurer Claude Desktop, lance dans un terminal :
+
+```bash
+# macOS / Linux
+MS_TENANT=consumers npx -y @mag-cie/mcp-microsoft-todo
+```
+
+```powershell
+# Windows PowerShell
+$env:MS_TENANT="consumers"; npx -y @mag-cie/mcp-microsoft-todo
+```
+
+Le serveur démarre en attente stdin. Demande un outil → device code → sign-in → token cached. Ctrl+C pour fermer.
+
+Maintenant Claude Desktop réutilise ce cache `~/.mcp-microsoft-todo/token-cache.json` directement, pas besoin de chercher dans les logs.
+
+**Mettre à jour :** modifie la version dans args (`@mag-cie/mcp-microsoft-todo@latest`), redémarre Claude Desktop. Ou laisse npx faire le boulot (cache npx ~24h).
+
+---
+
+### 🟧 Cursor / Continue / autres clients MCP stdio
+
+Tout client MCP qui supporte le transport **stdio** marche pareil. Format générique :
+
+```
+command: npx
+args: -y @mag-cie/mcp-microsoft-todo
+env: MS_TENANT=consumers (si compte perso)
+```
+
+Adapte au format de config du client (souvent JSON ou TOML similaire à Claude Desktop).
+
+---
+
+## 🆘 Troubleshooting auth
+
+| Symptôme | Solution |
+|---|---|
+| Page "Cette page n'est pas la bonne" après sign-in | Ajoute `MS_TENANT=consumers` (compte perso uniquement) |
+| Browser ouvre sur le mauvais compte Microsoft | Utilise une fenêtre **InPrivate/Incognito** pour le sign-in |
+| Erreur `invalid_scope` ou `Tasks.ReadWrite.Shared` | Purge le token cache et re-auth : `rm -rf ~/.mcp-microsoft-todo` |
+| `Node.js not found` ou `npx not found` | Installe Node.js 20+ depuis [nodejs.org](https://nodejs.org). Sur Windows, vérifie qu'il est dans le PATH (relance ton terminal après install) |
+| Token expiré, refresh ne marche pas | Purge le cache et re-auth |
+| Le device code n'apparaît jamais | Vérifie que le serveur est bien spawn — Claude Code : `claude mcp list` ; Claude Desktop : icône outils en bas. Si absent, vérifie le PATH de `npx` dans la config |
+| `MS_CLIENT_ID non configuré` | Tu utilises un fork dev — exporte `MS_CLIENT_ID` ou utilise la version officielle npm |
 
 ---
 
@@ -99,6 +214,25 @@ Astuce : utilise une fenêtre **InPrivate/Incognito** pour le sign-in initial, �
 | `list_linked_resources` | Liste les ressources liées d'une tâche |
 | `create_linked_resource` | Attacher une URL ou ref externe |
 | `delete_linked_resource` | Supprimer une ressource liée |
+
+### Open extensions (metadata JSON custom)
+| Outil | Description |
+|---|---|
+| `list_extensions` | Liste les open extensions d'une tâche |
+| `set_extension` | Upsert : crée ou met à jour une extension (project_id, external_ref, etc.) |
+| `delete_extension` | Supprimer une extension |
+
+### Cross-list helpers
+| Outil | Description |
+|---|---|
+| `list_overdue_tasks` | Toutes les tâches en retard, agrégées sur toutes les listes |
+| `list_tasks_by_category` | Toutes les tâches avec une catégorie donnée, cross-listes |
+| `bulk_update_categories` | Ajoute/retire des catégories à plusieurs tâches en 2 phases batch |
+
+### Export
+| Outil | Description |
+|---|---|
+| `export_tasks_ics` | Export iCalendar (VTODO + RRULE + VALARM) pour import Google Cal / Apple Cal / Outlook / Thunderbird |
 
 ### Format de sortie
 
@@ -175,7 +309,7 @@ claude mcp add --transport stdio microsoft-todo -- node /path/to/mcp-microsoft-t
 - [x] v0.2 — npm package distribuable, client ID baked-in
 - [x] v0.3 — recurrence + reminders + checklists + linkedResources + search + move + summarize_today + retry/error robustness + tests vitest + format compact (verbose opt-in)
 - [x] v0.4 — pagination auto + batch operations $batch + scope Tasks.ReadWrite.Shared (lecture listes partagées)
-- [ ] v0.5 — open extensions + cross-list helpers (overdue, by category, bulk update) + export iCalendar
+- [x] v0.5 — open extensions + cross-list helpers (overdue, by category, bulk update) + export iCalendar
 - [ ] v1.0 — milestone stable : CI GitHub Actions + tests étendus + snapshots + README polish
 
 ---

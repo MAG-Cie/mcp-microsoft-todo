@@ -13,12 +13,17 @@ import {
   batchCompleteTasks,
   batchCreateTasks,
   batchDeleteTasks,
+  bulkUpdateCategories,
   createTask,
   deleteTask,
+  exportTasksIcs,
+  listOverdueTasks,
   listTaskLists,
   listTasks,
+  listTasksByCategory,
   moveTask,
   searchTasks,
+  setTaskExtension,
   summarizeToday,
   updateTask,
 } from "./graph.js";
@@ -384,6 +389,193 @@ describe("batch operations", () => {
     const results = await batchCreateTasks(items);
     expect(results).toHaveLength(21);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("setTaskExtension (upsert)", () => {
+  it("PATCH si existe (200)", async () => {
+    const fetchMock = makeFetch([
+      { body: { id: "ext1", extensionName: "com.test", foo: "bar" } },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const ext = await setTaskExtension("L1", "T1", "com.test", { foo: "bar" });
+    expect(ext.extensionName).toBe("com.test");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("PATCH");
+  });
+
+  it("POST si 404 sur PATCH", async () => {
+    const fetchMock = makeFetch([
+      { status: 404, body: { error: { code: "ItemNotFound", message: "no ext" } } },
+      { body: { id: "ext1", extensionName: "com.test", foo: "bar" } },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const ext = await setTaskExtension("L1", "T1", "com.test", { foo: "bar" });
+    expect(ext.id).toBe("ext1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("POST");
+    const postBody = JSON.parse(
+      (fetchMock.mock.calls[1][1] as RequestInit).body as string
+    );
+    expect(postBody["@odata.type"]).toBe("microsoft.graph.openTypeExtension");
+    expect(postBody.extensionName).toBe("com.test");
+    expect(postBody.foo).toBe("bar");
+  });
+});
+
+describe("listOverdueTasks", () => {
+  it("filter status ne completed et dueDateTime < today", async () => {
+    const fetchMock = makeFetch([
+      { body: { value: [{ id: "L1", displayName: "L1", isOwner: true, isShared: false }] } },
+      { body: { value: [{ id: "T1", title: "Late", status: "notStarted", importance: "normal", isReminderOn: false }] } },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const results = await listOverdueTasks();
+    expect(results).toHaveLength(1);
+    const filterUrl = decodeURIComponent(
+      String(fetchMock.mock.calls[1][0]).replace(/\+/g, " ")
+    );
+    expect(filterUrl).toContain("status ne 'completed'");
+    expect(filterUrl).toContain("dueDateTime/dateTime lt");
+  });
+});
+
+describe("listTasksByCategory", () => {
+  it("filter categories/any() et échappe apostrophes", async () => {
+    const fetchMock = makeFetch([
+      { body: { value: [{ id: "L1", displayName: "L1", isOwner: true, isShared: false }] } },
+      { body: { value: [] } },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await listTasksByCategory("d'urgence");
+    const filterUrl = decodeURIComponent(
+      String(fetchMock.mock.calls[1][0]).replace(/\+/g, " ")
+    );
+    expect(filterUrl).toContain("categories/any(c: c eq 'd''urgence')");
+    expect(filterUrl).toContain("status ne 'completed'");
+  });
+});
+
+describe("bulkUpdateCategories", () => {
+  it("phase 1 GET pour catégories courantes, phase 2 PATCH avec union", async () => {
+    const fetchMock = makeFetch([
+      // Phase 1 GET batch
+      {
+        body: {
+          responses: [
+            { id: "0", status: 200, body: { id: "T1", categories: ["work"] } },
+            { id: "1", status: 200, body: { id: "T2", categories: [] } },
+          ],
+        },
+      },
+      // Phase 2 PATCH batch
+      {
+        body: {
+          responses: [
+            { id: "0", status: 200, body: { id: "T1", categories: ["work", "urgent"] } },
+            { id: "1", status: 200, body: { id: "T2", categories: ["urgent"] } },
+          ],
+        },
+      },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const results = await bulkUpdateCategories(
+      [
+        { listId: "L1", taskId: "T1" },
+        { listId: "L1", taskId: "T2" },
+      ],
+      { add: ["urgent"] }
+    );
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => r.ok)).toBe(true);
+    const patchBody = JSON.parse(
+      (fetchMock.mock.calls[1][1] as RequestInit).body as string
+    );
+    expect(patchBody.requests[0].body.categories).toEqual(["work", "urgent"]);
+    expect(patchBody.requests[1].body.categories).toEqual(["urgent"]);
+  });
+
+  it("propage erreurs phase 1 sans casser le batch", async () => {
+    const fetchMock = makeFetch([
+      {
+        body: {
+          responses: [
+            {
+              id: "0",
+              status: 404,
+              body: { error: { code: "NotFound", message: "missing" } },
+            },
+            { id: "1", status: 200, body: { id: "T2", categories: [] } },
+          ],
+        },
+      },
+      {
+        body: {
+          responses: [
+            { id: "1", status: 200, body: { id: "T2", categories: ["x"] } },
+          ],
+        },
+      },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const results = await bulkUpdateCategories(
+      [
+        { listId: "L1", taskId: "T_BAD" },
+        { listId: "L1", taskId: "T2" },
+      ],
+      { add: ["x"] }
+    );
+    expect(results[0].ok).toBe(false);
+    expect(results[0].error).toContain("GET failed");
+    expect(results[1].ok).toBe(true);
+  });
+});
+
+describe("exportTasksIcs", () => {
+  it("génère un VCALENDAR avec VTODO + RRULE + VALARM", async () => {
+    const fetchMock = makeFetch([
+      {
+        body: {
+          value: [{ id: "L1", displayName: "Boulot", isOwner: true, isShared: false }],
+        },
+      },
+      {
+        body: {
+          value: [
+            {
+              id: "T1",
+              title: "Sport",
+              status: "notStarted",
+              importance: "high",
+              isReminderOn: true,
+              dueDateTime: { dateTime: "2026-05-04T18:00:00", timeZone: "UTC" },
+              reminderDateTime: {
+                dateTime: "2026-05-04T17:00:00",
+                timeZone: "UTC",
+              },
+              recurrence: {
+                pattern: { type: "weekly", interval: 1, daysOfWeek: ["monday", "wednesday"] },
+                range: { type: "noEnd", startDate: "2026-05-04" },
+              },
+              categories: ["health"],
+            },
+          ],
+        },
+      },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const ics = await exportTasksIcs();
+    expect(ics).toContain("BEGIN:VCALENDAR");
+    expect(ics).toContain("END:VCALENDAR");
+    expect(ics).toContain("BEGIN:VTODO");
+    expect(ics).toContain("UID:T1@mcp-microsoft-todo");
+    expect(ics).toContain("SUMMARY:[Boulot] Sport");
+    expect(ics).toContain("DUE:20260504T180000Z");
+    expect(ics).toContain("STATUS:NEEDS-ACTION");
+    expect(ics).toContain("PRIORITY:1");
+    expect(ics).toContain("CATEGORIES:health");
+    expect(ics).toContain("RRULE:FREQ=WEEKLY;BYDAY=MO,WE");
+    expect(ics).toContain("BEGIN:VALARM");
+    expect(ics).toContain("TRIGGER;VALUE=DATE-TIME:20260504T170000Z");
   });
 });
 

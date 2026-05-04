@@ -1,3 +1,38 @@
+## [2026-05-04 18:30] — v0.5.0 : extensions + cross-list helpers + ICS export
+
+### Ce qui a été fait
+
+- **Open extensions** Graph (`/me/todo/lists/{id}/tasks/{id}/extensions`) : 3 outils MCP (`list_extensions`, `set_extension`, `delete_extension`)
+- **`set_extension` upsert** : tente PATCH, si 404 alors POST avec `@odata.type` + `extensionName` (Graph requirement)
+- **Cross-list helpers** :
+  - `list_overdue_tasks` — agrège tasks status ne completed et dueDateTime < today_UTC sur toutes les listes
+  - `list_tasks_by_category` — filter OData `categories/any(c: c eq 'X')` cross-listes, échappe apostrophes
+  - `bulk_update_categories` — 2 phases batch ($batch GET pour catégories courantes, puis $batch PATCH avec set mis à jour)
+- **`export_tasks_ics`** : génère VCALENDAR avec VTODO entries, RRULE pour recurrence (FREQ/INTERVAL/BYDAY/BYMONTHDAY/UNTIL/COUNT), VALARM pour reminders, escape RFC 5545 (`\\`, `,`, `;`, `\n`)
+- Formatter compact `formatExtensionCompact` : `id name:com.example.x foo="bar"` (skip `@odata.*` props)
+- 7 tests vitest supplémentaires (26 total) : extension upsert PATCH→POST fallback, overdue filter URL, by_category escape apostrophes, bulkUpdate phases batch, export ICS structure
+- README user étoffé sections Claude Code / Claude Desktop / Cursor avec install + premier auth + update + désinstall + table troubleshooting
+- Bump version 0.4.0 → 0.5.0
+
+### Décisions & raisons
+
+- **Open extensions plutôt que schemas extensions Graph** : Open extensions = JSON arbitraire. Schemas extensions = strict typing à pré-déclarer. Pour le use case "stocker un project_id ou un external_ref par tâche", open extensions = simple et suffisant.
+- **Upsert via PATCH→POST fallback** plutôt qu'API séparée create/update : simplifie l'usage côté LLM (un seul outil set_extension), évite l'erreur "exists" si recall.
+- **`bulk_update_categories` en 2 phases** plutôt que payload "diff" : Graph PATCH sur categories REMPLACE le tableau entier, donc on doit lire l'existant. 2 batches successifs = 2 requêtes HTTP au lieu de N×2 sans batch.
+- **ICS RRULE limité aux patterns simples** : skip relativeMonthly/Yearly (besoin de BYDAY+BYSETPOS plus complexes). Documenté dans le code via `return null`. Les tâches avec recurrence non convertible exportent juste leur DUE simple.
+
+### Problèmes rencontrés / contournements
+
+- Microsoft Graph open extensions requièrent `@odata.type: microsoft.graph.openTypeExtension` à la création (POST), pas à l'update (PATCH). Le upsert helper distingue les deux cas.
+- ICS DUE field doit être en UTC (suffix Z). Le formateur force la conversion en supposant que les dateTime de Graph sans timezone explicite sont en UTC. Si l'utilisateur a des tâches avec timeZone non-UTC, l'heure affichée dans le calendrier importé pourrait être décalée. Trade-off accepté pour v0.5.
+
+### Prochaines étapes suggérées
+
+1. Commit + push + npm publish v0.5.0
+2. v1.0 stable milestone : GitHub Actions CI, tests snapshot des formatters, README polish, exemples de prompts utilisateur
+
+---
+
 ## [2026-05-04 17:30] — v0.4.0 : pagination + batch + scope Tasks.ReadWrite.Shared
 
 ### Ce qui a été fait
