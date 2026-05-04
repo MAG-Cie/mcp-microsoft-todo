@@ -175,7 +175,7 @@ async function graphFetch<T>(
   throw new Error(`Graph ${res.status} on ${path} — ${detail}`);
 }
 
-// ─── Lists ─────────────────────────────────────────────────────────────────
+// ─── Pagination + batch helpers ────────────────────────────────────────────
 
 // Champs minimums utiles renvoyés par défaut (économie tokens + bande passante)
 const DEFAULT_LIST_SELECT = "id,displayName,isOwner,isShared,wellknownListName";
@@ -184,13 +184,75 @@ const DEFAULT_TASK_SELECT =
 const DEFAULT_CHECKLIST_SELECT = "id,displayName,isChecked";
 const DEFAULT_LINKED_SELECT = "id,webUrl,applicationName,displayName,externalId";
 
-export async function listTaskLists(opts: { select?: string } = {}): Promise<
-  TodoTaskList[]
-> {
+const MAX_PAGES = 50;
+const BATCH_LIMIT = 20;
+
+async function paginateAll<T>(firstPath: string): Promise<T[]> {
+  const items: T[] = [];
+  let path: string | null = firstPath;
+  let pages = 0;
+  while (path && pages < MAX_PAGES) {
+    const data: GraphCollection<T> = await graphFetch<GraphCollection<T>>(path);
+    items.push(...data.value);
+    const next = data["@odata.nextLink"];
+    if (next) {
+      const u = new URL(next);
+      path = u.pathname.replace(/^\/v1\.0/, "") + u.search;
+    } else {
+      path = null;
+    }
+    pages++;
+  }
+  return items;
+}
+
+export interface BatchRequest {
+  id: string;
+  method: "GET" | "POST" | "PATCH" | "DELETE";
+  url: string;
+  body?: unknown;
+  headers?: Record<string, string>;
+}
+
+export interface BatchResponse {
+  id: string;
+  status: number;
+  body?: unknown;
+  headers?: Record<string, string>;
+}
+
+export async function graphBatch(
+  requests: BatchRequest[]
+): Promise<BatchResponse[]> {
+  const all: BatchResponse[] = [];
+  for (let i = 0; i < requests.length; i += BATCH_LIMIT) {
+    const chunk = requests.slice(i, i + BATCH_LIMIT);
+    const data = await graphFetch<{ responses: BatchResponse[] }>("/$batch", {
+      method: "POST",
+      body: JSON.stringify({
+        requests: chunk.map((r) => ({
+          id: r.id,
+          method: r.method,
+          url: r.url,
+          headers: r.headers ?? { "Content-Type": "application/json" },
+          ...(r.body !== undefined ? { body: r.body } : {}),
+        })),
+      }),
+    });
+    all.push(...data.responses);
+  }
+  return all;
+}
+
+// ─── Lists ─────────────────────────────────────────────────────────────────
+
+export async function listTaskLists(
+  opts: { select?: string; paginate?: boolean } = {}
+): Promise<TodoTaskList[]> {
   const select = opts.select ?? DEFAULT_LIST_SELECT;
-  const data = await graphFetch<GraphCollection<TodoTaskList>>(
-    `/me/todo/lists?$select=${encodeURIComponent(select)}`
-  );
+  const path = `/me/todo/lists?$select=${encodeURIComponent(select)}`;
+  if (opts.paginate) return paginateAll<TodoTaskList>(path);
+  const data = await graphFetch<GraphCollection<TodoTaskList>>(path);
   return data.value;
 }
 
@@ -252,16 +314,22 @@ function buildTaskPayload(input: CreateTaskInput | UpdateTaskInput): Record<stri
 
 export async function listTasks(
   listId: string,
-  opts: { filter?: string; top?: number; orderby?: string; select?: string } = {}
+  opts: {
+    filter?: string;
+    top?: number;
+    orderby?: string;
+    select?: string;
+    paginate?: boolean;
+  } = {}
 ): Promise<TodoTask[]> {
   const params = new URLSearchParams();
   if (opts.filter) params.set("$filter", opts.filter);
   if (opts.top) params.set("$top", String(opts.top));
   if (opts.orderby) params.set("$orderby", opts.orderby);
   params.set("$select", opts.select ?? DEFAULT_TASK_SELECT);
-  const data = await graphFetch<GraphCollection<TodoTask>>(
-    `/me/todo/lists/${listId}/tasks?${params}`
-  );
+  const path = `/me/todo/lists/${listId}/tasks?${params}`;
+  if (opts.paginate) return paginateAll<TodoTask>(path);
+  const data = await graphFetch<GraphCollection<TodoTask>>(path);
   return data.value;
 }
 
@@ -428,12 +496,12 @@ export async function summarizeToday(timeZone = "Europe/Paris"): Promise<DailySu
 export async function listChecklistItems(
   listId: string,
   taskId: string,
-  opts: { select?: string } = {}
+  opts: { select?: string; paginate?: boolean } = {}
 ): Promise<ChecklistItem[]> {
   const select = opts.select ?? DEFAULT_CHECKLIST_SELECT;
-  const data = await graphFetch<GraphCollection<ChecklistItem>>(
-    `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems?$select=${encodeURIComponent(select)}`
-  );
+  const path = `/me/todo/lists/${listId}/tasks/${taskId}/checklistItems?$select=${encodeURIComponent(select)}`;
+  if (opts.paginate) return paginateAll<ChecklistItem>(path);
+  const data = await graphFetch<GraphCollection<ChecklistItem>>(path);
   return data.value;
 }
 
@@ -483,12 +551,12 @@ export async function deleteChecklistItem(
 export async function listLinkedResources(
   listId: string,
   taskId: string,
-  opts: { select?: string } = {}
+  opts: { select?: string; paginate?: boolean } = {}
 ): Promise<LinkedResource[]> {
   const select = opts.select ?? DEFAULT_LINKED_SELECT;
-  const data = await graphFetch<GraphCollection<LinkedResource>>(
-    `/me/todo/lists/${listId}/tasks/${taskId}/linkedResources?$select=${encodeURIComponent(select)}`
-  );
+  const path = `/me/todo/lists/${listId}/tasks/${taskId}/linkedResources?$select=${encodeURIComponent(select)}`;
+  if (opts.paginate) return paginateAll<LinkedResource>(path);
+  const data = await graphFetch<GraphCollection<LinkedResource>>(path);
   return data.value;
 }
 
@@ -520,4 +588,89 @@ export async function deleteLinkedResource(
     `/me/todo/lists/${listId}/tasks/${taskId}/linkedResources/${resourceId}`,
     { method: "DELETE" }
   );
+}
+
+// ─── Batch operations sur tâches ───────────────────────────────────────────
+// Microsoft Graph $batch : jusqu'à 20 requêtes par appel HTTP. Chunked auto.
+
+export interface BatchResultItem<T> {
+  index: number;
+  status: number;
+  ok: boolean;
+  result?: T;
+  error?: string;
+}
+
+export async function batchCreateTasks(
+  items: Array<{ listId: string; task: CreateTaskInput }>
+): Promise<Array<BatchResultItem<TodoTask>>> {
+  const requests: BatchRequest[] = items.map((item, idx) => {
+    const payload = buildTaskPayload(item.task);
+    if (!payload.importance) payload.importance = "normal";
+    return {
+      id: String(idx),
+      method: "POST",
+      url: `/me/todo/lists/${item.listId}/tasks`,
+      body: payload,
+    };
+  });
+  const responses = await graphBatch(requests);
+  return parseBatchResponses<TodoTask>(responses, items.length);
+}
+
+export async function batchCompleteTasks(
+  items: Array<{ listId: string; taskId: string }>
+): Promise<Array<BatchResultItem<TodoTask>>> {
+  const requests: BatchRequest[] = items.map((item, idx) => ({
+    id: String(idx),
+    method: "PATCH",
+    url: `/me/todo/lists/${item.listId}/tasks/${item.taskId}`,
+    body: { status: "completed" },
+  }));
+  const responses = await graphBatch(requests);
+  return parseBatchResponses<TodoTask>(responses, items.length);
+}
+
+export async function batchDeleteTasks(
+  items: Array<{ listId: string; taskId: string }>
+): Promise<Array<BatchResultItem<null>>> {
+  const requests: BatchRequest[] = items.map((item, idx) => ({
+    id: String(idx),
+    method: "DELETE",
+    url: `/me/todo/lists/${item.listId}/tasks/${item.taskId}`,
+  }));
+  const responses = await graphBatch(requests);
+  return parseBatchResponses<null>(responses, items.length);
+}
+
+function parseBatchResponses<T>(
+  responses: BatchResponse[],
+  expectedCount: number
+): Array<BatchResultItem<T>> {
+  const out: Array<BatchResultItem<T>> = new Array(expectedCount);
+  for (const r of responses) {
+    const idx = Number(r.id);
+    const ok = r.status >= 200 && r.status < 300;
+    let error: string | undefined;
+    if (!ok) {
+      const body = r.body as GraphErrorBody | string | undefined;
+      if (typeof body === "object" && body && "error" in body && body.error) {
+        error = body.error.code
+          ? `${body.error.code}: ${body.error.message ?? "(no message)"}`
+          : body.error.message ?? `HTTP ${r.status}`;
+      } else if (typeof body === "string") {
+        error = body;
+      } else {
+        error = `HTTP ${r.status}`;
+      }
+    }
+    out[idx] = {
+      index: idx,
+      status: r.status,
+      ok,
+      result: ok ? (r.body as T) : undefined,
+      error,
+    };
+  }
+  return out;
 }

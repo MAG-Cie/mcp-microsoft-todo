@@ -1,3 +1,37 @@
+## [2026-05-04 17:30] — v0.4.0 : pagination + batch + scope Tasks.ReadWrite.Shared
+
+### Ce qui a été fait
+
+- **Pagination auto** via `paginateAll<T>()` helper — option `paginate: true` sur tous les `list_*` outils (suit `@odata.nextLink`, plafonné à 50 pages)
+- **Batch operations Graph $batch** : helper bas niveau `graphBatch()` + 3 outils MCP (`batch_create_tasks`, `batch_complete_tasks`, `batch_delete_tasks`). Chunked auto par 20 (limite Graph). Erreurs par item, pas de fail global.
+- Scope **`Tasks.ReadWrite.Shared`** ajouté dans `auth.ts` SCOPES (permet de lire les listes partagées avec l'utilisateur)
+- Formatter compact `formatBatchCompact` : `"N ok / M err"` + détails OK et erreurs uniquement (économie tokens)
+- 6 nouveaux tests vitest (19 total) : pagination on/off, batch ordre, batch chunking, batch erreurs partielles
+- Bump version 0.3.0 → 0.4.0
+- README : nouvelle section "Batch operations", roadmap mise à jour
+- CHANGELOG v0.4.0 détaillé
+
+### Décisions & raisons
+
+- **Pagination opt-in plutôt que par défaut** : la plupart des cas d'usage MCP (LLM affichant à l'écran) tiennent largement dans 1 page (top défaut Graph = 100). Pagination = fallback explicite quand le LLM sait qu'il y a beaucoup d'items. Évite les coûts cachés.
+- **Plafond 50 pages** dans `paginateAll` : sécurité contre runaway. À 100 items/page = 5000 max. Au-delà, il faut un meilleur design (filter, search).
+- **Batch chunking par 20** : limite Graph $batch v1.0. Le helper accepte 100 items côté API, chunke en interne. L'utilisateur n'a pas à se préoccuper de ce détail.
+- **Erreurs par item dans batch** : pas de fail global. Permet au LLM de voir lesquelles ont échoué et corriger seulement celles-là (vs tout retry).
+- **Pas de share/unshare list** : Microsoft Graph n'expose pas ces opérations pour To Do (vérifié dans la doc). On documente la limitation dans CHANGELOG. Seule la lecture des listes partagées est gérée via le nouveau scope.
+
+### Problèmes rencontrés / contournements
+
+- App Reg Azure : il faut **manuellement ajouter** `Tasks.ReadWrite.Shared` dans **API permissions > Microsoft Graph > Delegated** côté maintainer (Antoine), puis **Grant admin consent** si tenant pro. Pour le client ID baked-in, action déjà à faire post-publish.
+- Token cache existant peut ne pas inclure le nouveau scope au premier refresh silencieux. Si un appel échoue avec `InsufficientPrivileges` ou `Tasks.ReadWrite.Shared` manquant, l'utilisateur doit `rm -rf ~/.mcp-microsoft-todo` et re-`auth`.
+
+### Prochaines étapes suggérées
+
+1. Ajouter `Tasks.ReadWrite.Shared` à l'App Reg Azure côté maintainer (sinon le scope demandé sera refusé par MS)
+2. Commit + push + npm publish v0.4.0
+3. Enchaîner sur v0.5 : open extensions + cross-list helpers + ICS export
+
+---
+
 ## [2026-05-04 17:00] — v0.3.0 : 8 features (A→H) + optimisation tokens
 
 ### Ce qui a été fait

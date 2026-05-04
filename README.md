@@ -78,6 +78,13 @@ Astuce : utilise une fenêtre **InPrivate/Incognito** pour le sign-in initial, �
 | `search_tasks` | Recherche cross-listes par titre |
 | `summarize_today` | Résumé tâches dues aujourd'hui + en retard |
 
+### Batch operations (économise les appels)
+| Outil | Description |
+|---|---|
+| `batch_create_tasks` | Crée jusqu'à 100 tâches en un seul appel HTTP Graph $batch |
+| `batch_complete_tasks` | Marque jusqu'à 100 tâches comme complétées en un appel |
+| `batch_delete_tasks` | Supprime jusqu'à 100 tâches en un appel |
+
 ### Sous-tâches (checklist items)
 | Outil | Description |
 |---|---|
@@ -167,9 +174,9 @@ claude mcp add --transport stdio microsoft-todo -- node /path/to/mcp-microsoft-t
 - [x] v0.1 — stdio + 6 outils CRUD
 - [x] v0.2 — npm package distribuable, client ID baked-in
 - [x] v0.3 — recurrence + reminders + checklists + linkedResources + search + move + summarize_today + retry/error robustness + tests vitest + format compact (verbose opt-in)
-- [ ] v0.4 — partage de listes (Graph beta `permissions`)
-- [ ] v0.5 — pagination automatique sur listTasks (suit `@odata.nextLink`)
-- [ ] v1.0 — version remote HTTP/SSE pour Claude.ai custom connector (multi-user OAuth proper)
+- [x] v0.4 — pagination auto + batch operations $batch + scope Tasks.ReadWrite.Shared (lecture listes partagées)
+- [ ] v0.5 — open extensions + cross-list helpers (overdue, by category, bulk update) + export iCalendar
+- [ ] v1.0 — milestone stable : CI GitHub Actions + tests étendus + snapshots + README polish
 
 ---
 

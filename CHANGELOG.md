@@ -4,6 +4,28 @@ Toutes les modifications notables de ce projet seront documentées ici.
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le projet adhère à [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-04
+
+### Added
+- **Pagination automatique** : option `paginate: true` sur `list_task_lists`, `list_tasks`, `list_checklist_items`, `list_linked_resources`. Suit `@odata.nextLink` jusqu'à 50 pages max (sécurité). Défaut `false` pour préserver le comportement existant.
+- **Batch operations Graph $batch** : 3 nouveaux outils
+  - `batch_create_tasks` : crée jusqu'à 100 tâches en un seul appel HTTP (chunké auto par 20)
+  - `batch_complete_tasks` : marque jusqu'à 100 tâches comme complétées en un appel
+  - `batch_delete_tasks` : supprime jusqu'à 100 tâches en un appel
+  - Erreurs par item ne font pas échouer le batch entier — chaque résultat porte son propre statut
+- **Helpers exportés** : `graphBatch(requests)`, `paginateAll<T>()` pour usage programmatique
+- Scope **`Tasks.ReadWrite.Shared`** ajouté à la requête d'auth — permet de lire les listes partagées avec toi (en plus de tes propres listes)
+- Format compact dédié pour résultats batch : `"N ok / M err"` + détails OK et erreurs uniquement (pas tout le payload)
+- 6 tests vitest supplémentaires : pagination on/off, batchCreate ordre préservé, batchComplete payload PATCH, batchDelete erreurs par item, chunking >20 items
+
+### Changed
+- Bump version `0.3.0` → `0.4.0`
+- `SCOPES` inclut désormais `Tasks.ReadWrite.Shared` — au prochain `npm run auth` ou prochain refresh, l'utilisateur consentira au nouveau scope (ou besoin de purger `~/.mcp-microsoft-todo/token-cache.json` si refresh silencieux ne déclenche pas le re-consent)
+- App Registration Azure : doit avoir `Tasks.ReadWrite.Shared` dans **API permissions** > **Delegated** (déjà ajouté côté maintainer pour le client ID baked-in)
+
+### Notes
+- v0.4 ne couvre PAS le **partage de listes en écriture** (créer/révoquer un share) car Microsoft Graph n'expose pas cette opération programmatiquement pour To Do — le partage reste manuel via UI Microsoft. Seule la **lecture** des listes partagées est supportée via le scope `Tasks.ReadWrite.Shared`.
+
 ## [0.3.0] - 2026-05-04
 
 ### Added

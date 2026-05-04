@@ -28,7 +28,12 @@ import {
   listLinkedResources,
   createLinkedResource,
   deleteLinkedResource,
+  batchCreateTasks,
+  batchCompleteTasks,
+  batchDeleteTasks,
   type PatternedRecurrence,
+  type BatchResultItem,
+  type CreateTaskInput,
   type TodoTask,
   type TodoTaskList,
   type ChecklistItem,
@@ -114,6 +119,28 @@ function formatSearchCompact(results: SearchResult[]): string {
   return lines.join("\n");
 }
 
+function formatBatchCompact<T>(
+  results: BatchResultItem<T>[],
+  formatItem?: (item: T) => string
+): string {
+  const ok = results.filter((r) => r.ok);
+  const err = results.filter((r) => !r.ok);
+  const lines: string[] = [`${ok.length} ok / ${err.length} err`];
+  if (ok.length > 0 && formatItem) {
+    lines.push("OK :");
+    for (const r of ok) {
+      if (r.result) lines.push(`  [${r.index}] ${formatItem(r.result)}`);
+    }
+  }
+  if (err.length > 0) {
+    lines.push("Erreurs :");
+    for (const r of err) {
+      lines.push(`  [${r.index}] HTTP ${r.status} — ${r.error ?? "(no detail)"}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function formatSummaryCompact(s: DailySummary): string {
   const lines: string[] = [
     `${s.date} — ${s.totalDueToday} due aujourd'hui, ${s.totalOverdue} en retard`,
@@ -138,7 +165,7 @@ function formatSummaryCompact(s: DailySummary): string {
 }
 
 const server = new Server(
-  { name: "microsoft-todo", version: "0.3.0" },
+  { name: "microsoft-todo", version: "0.4.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -190,6 +217,13 @@ const verboseField = {
     .describe("Si true : retourne le JSON complet. Sinon : format compact texte (défaut, économise les tokens)."),
 };
 
+const paginateField = {
+  paginate: z
+    .boolean()
+    .optional()
+    .describe("Si true : suit @odata.nextLink jusqu'à 50 pages (récupère TOUTES les entrées). Défaut false (1 page)."),
+};
+
 const taskBaseFields = {
   body: z.string().optional(),
   importance: z.enum(["low", "normal", "high"]).optional(),
@@ -211,7 +245,7 @@ const taskBaseFields = {
 // ─── Schémas Zod (validation runtime des args) ─────────────────────────────
 
 const schemas = {
-  list_task_lists: z.object({ ...verboseField }),
+  list_task_lists: z.object({ ...verboseField, ...paginateField }),
   list_tasks: z.object({
     list_id: z.string().describe("ID de la liste To Do"),
     filter: z
@@ -221,6 +255,7 @@ const schemas = {
     top: z.number().int().positive().max(100).optional(),
     orderby: z.string().optional().describe("OData $orderby, ex: 'dueDateTime/dateTime asc'"),
     ...verboseField,
+    ...paginateField,
   }),
   get_task: z.object({
     list_id: z.string(),
@@ -278,6 +313,7 @@ const schemas = {
     list_id: z.string(),
     task_id: z.string(),
     ...verboseField,
+    ...paginateField,
   }),
   create_checklist_item: z.object({
     list_id: z.string(),
@@ -303,6 +339,7 @@ const schemas = {
     list_id: z.string(),
     task_id: z.string(),
     ...verboseField,
+    ...paginateField,
   }),
   create_linked_resource: z.object({
     list_id: z.string(),
@@ -317,6 +354,33 @@ const schemas = {
     list_id: z.string(),
     task_id: z.string(),
     resource_id: z.string(),
+  }),
+  batch_create_tasks: z.object({
+    items: z
+      .array(
+        z.object({
+          list_id: z.string(),
+          title: z.string(),
+          ...taskBaseFields,
+        })
+      )
+      .min(1)
+      .max(100),
+    ...verboseField,
+  }),
+  batch_complete_tasks: z.object({
+    items: z
+      .array(z.object({ list_id: z.string(), task_id: z.string() }))
+      .min(1)
+      .max(100),
+    ...verboseField,
+  }),
+  batch_delete_tasks: z.object({
+    items: z
+      .array(z.object({ list_id: z.string(), task_id: z.string() }))
+      .min(1)
+      .max(100),
+    ...verboseField,
   }),
 };
 
@@ -383,6 +447,14 @@ const verboseJsonProp = {
   },
 };
 
+const paginateJsonProp = {
+  paginate: {
+    type: "boolean",
+    description:
+      "Si true : suit @odata.nextLink jusqu'à 50 pages (récupère TOUTES les entrées). Défaut false.",
+  },
+};
+
 const taskBaseJsonProps = {
   body: { type: "string" },
   importance: { type: "string", enum: ["low", "normal", "high"] },
@@ -403,7 +475,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "list_task_lists",
       description:
         "Liste toutes les listes To Do de l'utilisateur (Tâches, Boîte de réception, listes custom).",
-      inputSchema: { type: "object", properties: { ...verboseJsonProp } },
+      inputSchema: {
+        type: "object",
+        properties: { ...verboseJsonProp, ...paginateJsonProp },
+      },
     },
     {
       name: "list_tasks",
@@ -417,6 +492,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           top: { type: "number" },
           orderby: { type: "string" },
           ...verboseJsonProp,
+          ...paginateJsonProp,
         },
         required: ["list_id"],
       },
@@ -551,6 +627,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           list_id: { type: "string" },
           task_id: { type: "string" },
           ...verboseJsonProp,
+          ...paginateJsonProp,
         },
         required: ["list_id", "task_id"],
       },
@@ -609,6 +686,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           list_id: { type: "string" },
           task_id: { type: "string" },
           ...verboseJsonProp,
+          ...paginateJsonProp,
         },
         required: ["list_id", "task_id"],
       },
@@ -643,6 +721,79 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["list_id", "task_id", "resource_id"],
       },
     },
+    {
+      name: "batch_create_tasks",
+      description:
+        "Crée plusieurs tâches en un seul appel HTTP via Microsoft Graph $batch (jusqu'à 100 items, chunked auto par 20). Retour : statut + résultat OU erreur par item dans l'ordre. Plus économe que N appels create_task.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          items: {
+            type: "array",
+            maxItems: 100,
+            items: {
+              type: "object",
+              properties: {
+                list_id: { type: "string" },
+                title: { type: "string" },
+                ...taskBaseJsonProps,
+              },
+              required: ["list_id", "title"],
+            },
+          },
+          ...verboseJsonProp,
+        },
+        required: ["items"],
+      },
+    },
+    {
+      name: "batch_complete_tasks",
+      description:
+        "Marque plusieurs tâches comme complétées en un seul appel HTTP $batch (jusqu'à 100 items).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          items: {
+            type: "array",
+            maxItems: 100,
+            items: {
+              type: "object",
+              properties: {
+                list_id: { type: "string" },
+                task_id: { type: "string" },
+              },
+              required: ["list_id", "task_id"],
+            },
+          },
+          ...verboseJsonProp,
+        },
+        required: ["items"],
+      },
+    },
+    {
+      name: "batch_delete_tasks",
+      description:
+        "Supprime plusieurs tâches en un seul appel HTTP $batch (jusqu'à 100 items).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          items: {
+            type: "array",
+            maxItems: 100,
+            items: {
+              type: "object",
+              properties: {
+                list_id: { type: "string" },
+                task_id: { type: "string" },
+              },
+              required: ["list_id", "task_id"],
+            },
+          },
+          ...verboseJsonProp,
+        },
+        required: ["items"],
+      },
+    },
   ],
 }));
 
@@ -660,7 +811,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     switch (name) {
       case "list_task_lists": {
         const a = schemas.list_task_lists.parse(args ?? {});
-        const lists = await listTaskLists();
+        const lists = await listTaskLists({ paginate: a.paginate });
         return out(lists, a.verbose, (ls) =>
           ls.length === 0
             ? "Aucune liste."
@@ -673,6 +824,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           filter: a.filter,
           top: a.top,
           orderby: a.orderby,
+          paginate: a.paginate,
         });
         return out(tasks, a.verbose, (ts) =>
           ts.length === 0
@@ -748,7 +900,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
       case "list_checklist_items": {
         const a = schemas.list_checklist_items.parse(args);
-        const items = await listChecklistItems(a.list_id, a.task_id);
+        const items = await listChecklistItems(a.list_id, a.task_id, {
+          paginate: a.paginate,
+        });
         return out(items, a.verbose, (xs) =>
           xs.length === 0
             ? "Aucun sous-élément."
@@ -780,7 +934,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
       case "list_linked_resources": {
         const a = schemas.list_linked_resources.parse(args);
-        const rs = await listLinkedResources(a.list_id, a.task_id);
+        const rs = await listLinkedResources(a.list_id, a.task_id, {
+          paginate: a.paginate,
+        });
         return out(rs, a.verbose, (xs) =>
           xs.length === 0
             ? "Aucune ressource liée."
@@ -801,6 +957,42 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const a = schemas.delete_linked_resource.parse(args);
         await deleteLinkedResource(a.list_id, a.task_id, a.resource_id);
         return text(`Ressource liée ${a.resource_id} supprimée.`);
+      }
+      case "batch_create_tasks": {
+        const a = schemas.batch_create_tasks.parse(args);
+        const items: Array<{ listId: string; task: CreateTaskInput }> = a.items.map(
+          (it) => ({
+            listId: it.list_id,
+            task: {
+              title: it.title,
+              body: it.body,
+              importance: it.importance,
+              dueDateTime: it.due_date,
+              timeZone: it.time_zone,
+              categories: it.categories,
+              recurrence: it.recurrence as PatternedRecurrence | undefined,
+              isReminderOn: it.is_reminder_on,
+              reminderDateTime: it.reminder_date_time,
+              reminderTimeZone: it.reminder_time_zone,
+            },
+          })
+        );
+        const results = await batchCreateTasks(items);
+        return out(results, a.verbose, (rs) => formatBatchCompact(rs, formatTaskCompact));
+      }
+      case "batch_complete_tasks": {
+        const a = schemas.batch_complete_tasks.parse(args);
+        const results = await batchCompleteTasks(
+          a.items.map((it) => ({ listId: it.list_id, taskId: it.task_id }))
+        );
+        return out(results, a.verbose, (rs) => formatBatchCompact(rs, formatTaskCompact));
+      }
+      case "batch_delete_tasks": {
+        const a = schemas.batch_delete_tasks.parse(args);
+        const results = await batchDeleteTasks(
+          a.items.map((it) => ({ listId: it.list_id, taskId: it.task_id }))
+        );
+        return out(results, a.verbose, (rs) => formatBatchCompact(rs));
       }
       default:
         throw new Error(`Outil inconnu: ${name}`);

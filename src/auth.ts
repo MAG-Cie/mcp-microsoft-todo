@@ -14,8 +14,13 @@ import { pathToFileURL } from "node:url";
 const CACHE_DIR = join(homedir(), ".mcp-microsoft-todo");
 const CACHE_FILE = join(CACHE_DIR, "token-cache.json");
 
-// Scopes To Do — minimum nécessaire
-export const SCOPES = ["Tasks.ReadWrite", "offline_access"];
+// Scopes To Do — Tasks.ReadWrite.Shared permet aussi de lire les listes partagées avec toi
+// (lecture seule via Graph côté delegated). offline_access pour refresh silencieux.
+export const SCOPES = [
+  "Tasks.ReadWrite",
+  "Tasks.ReadWrite.Shared",
+  "offline_access",
+];
 
 // Client ID public de l'App Registration multi-tenant publiée par MAG-Cie.
 // Public car device code flow = public client (aucun secret). Override via env si fork.

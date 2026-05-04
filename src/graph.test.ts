@@ -10,6 +10,9 @@ vi.mock("./auth.js", () => ({
 
 import { getAccessToken } from "./auth.js";
 import {
+  batchCompleteTasks,
+  batchCreateTasks,
+  batchDeleteTasks,
   createTask,
   deleteTask,
   listTaskLists,
@@ -236,6 +239,151 @@ describe("summarizeToday", () => {
     expect(s.totalOverdue).toBe(1);
     expect(s.byList[0].dueToday[0].id).toBe("T_TODAY");
     expect(s.byList[0].overdue[0].id).toBe("T_LATE");
+  });
+});
+
+describe("pagination", () => {
+  it("paginate=true suit @odata.nextLink et accumule", async () => {
+    const fetchMock = makeFetch([
+      {
+        body: {
+          value: [{ id: "L1", displayName: "L1", isOwner: true, isShared: false }],
+          "@odata.nextLink":
+            "https://graph.microsoft.com/v1.0/me/todo/lists?$skiptoken=ABC",
+        },
+      },
+      {
+        body: {
+          value: [{ id: "L2", displayName: "L2", isOwner: true, isShared: false }],
+        },
+      },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const lists = await listTaskLists({ paginate: true });
+    expect(lists).toHaveLength(2);
+    expect(lists.map((l) => l.id)).toEqual(["L1", "L2"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const secondUrl = String(fetchMock.mock.calls[1][0]);
+    expect(secondUrl).toContain("$skiptoken=ABC");
+  });
+
+  it("paginate=false (default) ne fait qu'un seul appel même avec nextLink", async () => {
+    const fetchMock = makeFetch([
+      {
+        body: {
+          value: [{ id: "L1", displayName: "L1", isOwner: true, isShared: false }],
+          "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/todo/lists?$skiptoken=ABC",
+        },
+      },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const lists = await listTaskLists();
+    expect(lists).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("batch operations", () => {
+  it("batchCreateTasks envoie /$batch avec items POST et préserve l'ordre", async () => {
+    const fetchMock = makeFetch([
+      {
+        body: {
+          responses: [
+            { id: "1", status: 201, body: { id: "TB", title: "B" } },
+            { id: "0", status: 201, body: { id: "TA", title: "A" } },
+          ],
+        },
+      },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const results = await batchCreateTasks([
+      { listId: "L1", task: { title: "A" } },
+      { listId: "L2", task: { title: "B" } },
+    ]);
+    expect(results).toHaveLength(2);
+    expect(results[0].ok).toBe(true);
+    expect(results[0].result?.id).toBe("TA");
+    expect(results[1].result?.id).toBe("TB");
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("/$batch");
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body as string);
+    expect(body.requests).toHaveLength(2);
+    expect(body.requests[0].method).toBe("POST");
+    expect(body.requests[0].url).toBe("/me/todo/lists/L1/tasks");
+    expect(body.requests[0].body.title).toBe("A");
+  });
+
+  it("batchCompleteTasks envoie PATCH avec status:completed", async () => {
+    const fetchMock = makeFetch([
+      {
+        body: {
+          responses: [
+            { id: "0", status: 200, body: { id: "T1", status: "completed" } },
+            { id: "1", status: 200, body: { id: "T2", status: "completed" } },
+          ],
+        },
+      },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const results = await batchCompleteTasks([
+      { listId: "L1", taskId: "T1" },
+      { listId: "L1", taskId: "T2" },
+    ]);
+    expect(results.every((r) => r.ok)).toBe(true);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.requests[0].method).toBe("PATCH");
+    expect(body.requests[0].body).toEqual({ status: "completed" });
+  });
+
+  it("batchDeleteTasks expose erreurs sans throw global", async () => {
+    const fetchMock = makeFetch([
+      {
+        body: {
+          responses: [
+            { id: "0", status: 204 },
+            {
+              id: "1",
+              status: 404,
+              body: { error: { code: "NotFound", message: "Task gone" } },
+            },
+          ],
+        },
+      },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const results = await batchDeleteTasks([
+      { listId: "L1", taskId: "T1" },
+      { listId: "L1", taskId: "T2" },
+    ]);
+    expect(results[0].ok).toBe(true);
+    expect(results[1].ok).toBe(false);
+    expect(results[1].error).toContain("NotFound");
+    expect(results[1].error).toContain("Task gone");
+  });
+
+  it("batch chunké quand > 20 items", async () => {
+    const responses1 = Array.from({ length: 20 }, (_, i) => ({
+      id: String(i),
+      status: 201,
+      body: { id: `T${i}`, title: `t${i}` },
+    }));
+    const responses2 = [
+      { id: "20", status: 201, body: { id: "T20", title: "t20" } },
+    ];
+    const fetchMock = makeFetch([
+      { body: { responses: responses1 } },
+      { body: { responses: responses2 } },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const items = Array.from({ length: 21 }, (_, i) => ({
+      listId: "L1",
+      task: { title: `t${i}` },
+    }));
+    const results = await batchCreateTasks(items);
+    expect(results).toHaveLength(21);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 

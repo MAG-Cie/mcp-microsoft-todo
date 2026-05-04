@@ -1,6 +1,6 @@
 {
   "name": "@mag-cie/mcp-microsoft-todo",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server pour Microsoft To Do via Microsoft Graph API. Stdio, device code flow, install local.",
   "type": "module",
   "main": "dist/index.js",
