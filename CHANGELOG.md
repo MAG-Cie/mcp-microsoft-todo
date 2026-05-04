@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2026-05-04
+
+### Added
+- **`list_all_tasks` MCP tool** — fetches every active task across every list in a single MCP round-trip. Internally uses Graph `$batch` (1 HTTP call) when there are >5 lists, parallel direct fetches otherwise. Replaces the previous N×(`list_task_lists` + `list_tasks`) pattern that the LLM had to orchestrate, cutting the total round-trip count from ~8 to 1 for the typical "what are all my tasks?" query.
+- Optional args: `filter` (extra OData clause, AND-merged with the default `status ne 'completed'`), `top_per_list` (default 50), `include_completed` (default false), `verbose`.
+- Output (compact): `{N} task(s) across {M} list(s):` followed by one block per non-empty list. Per-list errors (e.g. throttling on a single list) are surfaced inline without aborting the whole call.
+- New i18n key `allTasksHeader` in en/fr/es/de bundles.
+- Exported `listAllTasks()` and `ListWithTasks` interface from `src/graph.ts`.
+- Exported `formatAllTasksCompact()` from `src/formatters.ts`.
+
+### Notes
+- Local smoke test: ~12s end-to-end for 8 lists with ~80 tasks total (vs ~50s observed for the LLM-orchestrated 8-call sequence).
+- Tool count: 27 → 28.
+
 ## [1.1.3] - 2026-05-04
 
 ### Fixed

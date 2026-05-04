@@ -571,6 +571,40 @@ export async function summarizeToday(timeZone = "Europe/Paris"): Promise<DailySu
   return { date: today, totalDueToday, totalOverdue, byList };
 }
 
+// ─── List all tasks across every list ──────────────────────────────────────
+
+export interface ListWithTasks {
+  list: { id: string; displayName: string };
+  tasks: TodoTask[];
+  error?: string;
+}
+
+// Fetch every task from every list in a single MCP round-trip.
+// Internally uses $batch on Graph when there are >5 lists, parallel fetch otherwise.
+// Saves ~N round-trips for the LLM compared to listTaskLists + N × listTasks.
+export async function listAllTasks(
+  opts: {
+    filter?: string;
+    topPerList?: number;
+    includeCompleted?: boolean;
+  } = {}
+): Promise<ListWithTasks[]> {
+  const lists = await listTaskLists();
+  const filterParts: string[] = [];
+  if (opts.filter) filterParts.push(opts.filter);
+  if (!opts.includeCompleted) filterParts.push("status ne 'completed'");
+  const filter = filterParts.length > 0 ? filterParts.join(" and ") : undefined;
+  const perList = await fetchTasksAcrossLists(lists, {
+    filter,
+    top: opts.topPerList ?? 50,
+  });
+  return perList.map((r) => ({
+    list: { id: r.list.id, displayName: r.list.displayName },
+    tasks: r.tasks,
+    error: r.error,
+  }));
+}
+
 // ─── Checklists (sub-tasks) ────────────────────────────────────────────────
 
 export async function listChecklistItems(

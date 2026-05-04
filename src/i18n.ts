@@ -59,6 +59,7 @@ interface Messages {
   moved: (compact: string) => string;
   error: (msg: string) => string;
   unknownTool: (name: string) => string;
+  allTasksHeader: (lists: number, tasks: number) => string;
 }
 
 const en: Messages = {
@@ -86,6 +87,7 @@ const en: Messages = {
   moved: (compact) => `Moved. New ID: ${compact}`,
   error: (msg) => `Error: ${msg}`,
   unknownTool: (name) => `Unknown tool: ${name}`,
+  allTasksHeader: (lists, tasks) => `${tasks} task(s) across ${lists} list(s):`,
 };
 
 const fr: Messages = {
@@ -113,6 +115,7 @@ const fr: Messages = {
   moved: (compact) => `Déplacée. Nouvel ID : ${compact}`,
   error: (msg) => `Erreur : ${msg}`,
   unknownTool: (name) => `Outil inconnu : ${name}`,
+  allTasksHeader: (lists, tasks) => `${tasks} tâche(s) sur ${lists} liste(s) :`,
 };
 
 const es: Messages = {
@@ -140,6 +143,7 @@ const es: Messages = {
   moved: (compact) => `Movida. Nuevo ID: ${compact}`,
   error: (msg) => `Error: ${msg}`,
   unknownTool: (name) => `Herramienta desconocida: ${name}`,
+  allTasksHeader: (lists, tasks) => `${tasks} tarea(s) en ${lists} lista(s):`,
 };
 
 const de: Messages = {
@@ -167,6 +171,7 @@ const de: Messages = {
   moved: (compact) => `Verschoben. Neue ID: ${compact}`,
   error: (msg) => `Fehler: ${msg}`,
   unknownTool: (name) => `Unbekanntes Werkzeug: ${name}`,
+  allTasksHeader: (lists, tasks) => `${tasks} Aufgabe(n) in ${lists} Liste(n):`,
 };
 
 const bundles: Record<Locale, Messages> = { en, fr, es, de };

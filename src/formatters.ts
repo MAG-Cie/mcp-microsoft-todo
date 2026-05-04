@@ -12,6 +12,7 @@ import type {
   ChecklistItem,
   DailySummary,
   LinkedResource,
+  ListWithTasks,
   OpenExtension,
   SearchResult,
   TodoTask,
@@ -119,6 +120,21 @@ export function formatSummaryCompact(s: DailySummary): string {
       lines.push(`  ${JSON.stringify(l.list.displayName)} (${l.list.id}):`);
       for (const task of l.overdue) lines.push(`    ${formatTaskCompact(task)}`);
     }
+  }
+  return lines.join("\n");
+}
+
+export function formatAllTasksCompact(perList: ListWithTasks[]): string {
+  const total = perList.reduce((s, l) => s + l.tasks.length, 0);
+  const lines: string[] = [t.allTasksHeader(perList.length, total)];
+  for (const { list, tasks, error } of perList) {
+    if (error) {
+      lines.push(`\n${JSON.stringify(list.displayName)} (${list.id}) — ${t.error(error)}`);
+      continue;
+    }
+    if (tasks.length === 0) continue;
+    lines.push(`\n${JSON.stringify(list.displayName)} (${list.id}) — ${tasks.length}:`);
+    for (const task of tasks) lines.push(`  ${formatTaskCompact(task)}`);
   }
   return lines.join("\n");
 }

@@ -22,6 +22,7 @@ import {
   moveTask,
   searchTasks,
   summarizeToday,
+  listAllTasks,
   listChecklistItems,
   createChecklistItem,
   updateChecklistItem,
@@ -50,12 +51,13 @@ import {
   formatExtensionCompact,
   formatSearchCompact,
   formatSummaryCompact,
+  formatAllTasksCompact,
   formatBatchCompact,
 } from "./formatters.js";
 import { t } from "./i18n.js";
 
 const server = new Server(
-  { name: "microsoft-todo", version: "1.1.3" },
+  { name: "microsoft-todo", version: "1.1.4" },
   { capabilities: { tools: {} } }
 );
 
@@ -204,6 +206,12 @@ const schemas = {
   }),
   summarize_today: z.object({
     time_zone: z.string().optional(),
+    ...verboseField,
+  }),
+  list_all_tasks: z.object({
+    filter: z.string().optional(),
+    top_per_list: z.number().int().positive().max(200).optional(),
+    include_completed: z.boolean().optional(),
     ...verboseField,
   }),
   list_checklist_items: z.object({
@@ -569,6 +577,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: "object",
         properties: {
           time_zone: { type: "string" },
+          ...verboseJsonProp,
+        },
+      },
+    },
+    {
+      name: "list_all_tasks",
+      description:
+        "Fetch every active task across every list in a single round-trip (uses Graph $batch internally). Use this for the question \"what are all my tasks?\" instead of N×list_tasks calls. Optional `filter` is an OData filter applied per list (e.g. \"importance eq 'high'\"). By default `status ne 'completed'` is appended unless `include_completed` is true.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          filter: { type: "string" },
+          top_per_list: { type: "number" },
+          include_completed: { type: "boolean" },
           ...verboseJsonProp,
         },
       },
@@ -970,6 +992,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const a = schemas.summarize_today.strict().parse(args ?? {});
         const summary = await summarizeToday(a.time_zone);
         return out(summary, a.verbose, formatSummaryCompact);
+      }
+      case "list_all_tasks": {
+        const a = schemas.list_all_tasks.strict().parse(args ?? {});
+        const all = await listAllTasks({
+          filter: a.filter,
+          topPerList: a.top_per_list,
+          includeCompleted: a.include_completed,
+        });
+        return out(all, a.verbose, formatAllTasksCompact);
       }
       case "list_checklist_items": {
         const a = schemas.list_checklist_items.strict().parse(args);
