@@ -64,14 +64,43 @@ Astuce : utilise une fenêtre **InPrivate/Incognito** pour le sign-in initial, �
 
 ## 🛠 Outils exposés
 
+### Listes & tâches
 | Outil | Description |
 |---|---|
 | `list_task_lists` | Toutes tes listes To Do |
-| `list_tasks` | Tâches d'une liste (filtre OData supporté) |
-| `create_task` | Créer une tâche (title, body, importance, due date, categories) |
-| `update_task` | Modifier titre, statut, due date… |
+| `list_tasks` | Tâches d'une liste (filtre OData, $orderby) |
+| `get_task` | Détail d'une tâche par ID |
+| `create_task` | Créer une tâche (title, body, importance, due date, categories, **récurrence, rappel**) |
+| `update_task` | Modifier titre, statut, due date, récurrence, rappel… |
 | `complete_task` | Marquer comme complétée |
 | `delete_task` | Supprimer définitivement |
+| `move_task` | Déplacer une tâche d'une liste à une autre |
+| `search_tasks` | Recherche cross-listes par titre |
+| `summarize_today` | Résumé tâches dues aujourd'hui + en retard |
+
+### Sous-tâches (checklist items)
+| Outil | Description |
+|---|---|
+| `list_checklist_items` | Sous-éléments d'une tâche |
+| `create_checklist_item` | Ajouter un sous-élément |
+| `update_checklist_item` | Renommer / cocher / décocher |
+| `delete_checklist_item` | Supprimer un sous-élément |
+
+### Ressources liées (URLs externes attachées à une tâche)
+| Outil | Description |
+|---|---|
+| `list_linked_resources` | Liste les ressources liées d'une tâche |
+| `create_linked_resource` | Attacher une URL ou ref externe |
+| `delete_linked_resource` | Supprimer une ressource liée |
+
+### Format de sortie
+
+Par défaut, les outils retournent un **format compact texte** (1 ligne / item) pour économiser les tokens du LLM. Légende :
+- `[!]` importance haute, `[?]` basse (rien si normale)
+- `[v]` complétée, `[>]` en cours, `[w]` en attente, `[d]` différée (rien si non commencée)
+- `due:`, `rem:`, `rec:`, `cat:`, `body:` champs présents uniquement si renseignés
+
+Pour obtenir le **JSON Graph complet**, passer `verbose: true` à n'importe quel outil de lecture.
 
 ---
 
@@ -137,9 +166,9 @@ claude mcp add --transport stdio microsoft-todo -- node /path/to/mcp-microsoft-t
 
 - [x] v0.1 — stdio + 6 outils CRUD
 - [x] v0.2 — npm package distribuable, client ID baked-in
-- [ ] v0.3 — recurrence, reminders, linkedResources
-- [ ] v0.4 — checklists (`tasks/{id}/checklistItems`)
-- [ ] v0.5 — partage de listes
+- [x] v0.3 — recurrence + reminders + checklists + linkedResources + search + move + summarize_today + retry/error robustness + tests vitest + format compact (verbose opt-in)
+- [ ] v0.4 — partage de listes (Graph beta `permissions`)
+- [ ] v0.5 — pagination automatique sur listTasks (suit `@odata.nextLink`)
 - [ ] v1.0 — version remote HTTP/SSE pour Claude.ai custom connector (multi-user OAuth proper)
 
 ---

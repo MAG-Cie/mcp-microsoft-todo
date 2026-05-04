@@ -4,6 +4,34 @@ Toutes les modifications notables de ce projet seront documentées ici.
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le projet adhère à [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-04
+
+### Added
+- **Recurrence** : champs `recurrence` (patternedRecurrence Microsoft Graph) sur `create_task` et `update_task` — patterns daily / weekly / absoluteMonthly / relativeMonthly / absoluteYearly / relativeYearly avec range endDate / noEnd / numbered
+- **Reminders** : champs `is_reminder_on`, `reminder_date_time`, `reminder_time_zone` sur `create_task` et `update_task`
+- **Checklists** (sous-tâches) : 4 nouveaux outils `list_checklist_items`, `create_checklist_item`, `update_checklist_item`, `delete_checklist_item`
+- **Linked resources** : 3 nouveaux outils `list_linked_resources`, `create_linked_resource`, `delete_linked_resource` pour attacher des URLs/refs externes à une tâche
+- **`get_task`** : récupère le détail d'une tâche par ID
+- **`move_task`** : déplace une tâche d'une liste à une autre (recrée + supprime ; checklistItems/linkedResources non préservés, l'ID change)
+- **`search_tasks`** : recherche cross-listes par titre via `$filter contains()`, exclut les complétées par défaut, échappe les apostrophes
+- **`summarize_today`** : agrège les tâches dues aujourd'hui et en retard sur toutes les listes
+- **Format compact texte** par défaut sur tous les outils de lecture pour économiser les tokens LLM. Marqueurs : `[!]` high, `[?]` low, `[v]` completed, `[>]` inProgress, `[w]` waiting, `[d]` deferred. Champs `due:`, `rem:`, `rec:`, `cat:`, `body:` affichés seulement si présents.
+- **Param `verbose: true`** : opt-in pour récupérer le JSON Graph complet sur n'importe quel outil de lecture
+- **OData `$select`** systématique sur tous les appels Graph : seuls les champs utiles transitent (économie bande passante + tokens)
+- **Param `orderby`** sur `list_tasks` (ex: `dueDateTime/dateTime asc`)
+- **Retry automatique sur 429** (rate limit Graph) avec respect du header `Retry-After`
+- **Retry automatique sur 5xx** avec backoff exponentiel borné (3 tentatives)
+- **Retry automatique sur 401** : re-acquisition forcée du token puis retry une fois
+- **Parsing structuré des erreurs Graph** : extrait `error.code` et `error.message` du body JSON
+- **Tests vitest** : 13 tests sur `graph.ts` (fetch + auth mockés), couvre URL builders, payloads, retry/backoff, parse erreurs, recherche cross-listes, summarize_today
+- Scripts npm `test` et `test:watch`
+- `prepublishOnly` lance désormais `test && build` (au lieu de juste `build`)
+
+### Changed
+- Bump version `0.2.0` → `0.3.0`
+- README enrichi : nouvelle section "Outils exposés" complète avec sections Listes/Sous-tâches/Ressources liées, légende du format compact, doc du param `verbose`
+- Roadmap mise à jour : v0.3 cochée, prochaines étapes v0.4 (partage de listes Graph beta) et v0.5 (pagination auto)
+
 ## [0.2.0] - 2026-05-04
 
 ### Added

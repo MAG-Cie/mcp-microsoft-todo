@@ -1,3 +1,48 @@
+## [2026-05-04 17:00] — v0.3.0 : 8 features (A→H) + optimisation tokens
+
+### Ce qui a été fait
+
+- **A** Recurrence + reminders sur create_task / update_task (mapping payload Graph)
+- **B** Checklists CRUD : 4 nouveaux outils (list/create/update/delete checklist_item)
+- **C** Linked resources : 3 nouveaux outils
+- **D** Robustesse graphFetch : retry 429 (Retry-After), retry 5xx (backoff exponentiel), retry 401 (token re-acquired), parse erreurs Graph (error.code + error.message)
+- **E** search_tasks : agrégation Promise.all sur toutes les listes, filter contains() avec échappement apostrophes
+- **F** Tests vitest : 13 tests passants (fetch + auth mockés), couvre URL builders, payloads, retry, parse erreurs, search, summarize_today
+- **G** move_task : getTask + createTask + completeTask (si applicable) + deleteTask
+- **H** summarize_today : classification dueToday vs overdue par comparaison de dates UTC
+- **Optimisation tokens** (demande explicite Antoine) :
+  - `$select` systématique sur tous les appels Graph (limite champs réseau)
+  - Format compact texte par défaut sur tous les outils de lecture (1 ligne / item, marqueurs ASCII)
+  - Param `verbose: true` opt-in pour fallback JSON complet
+  - Plus de pretty-print JSON
+- Scripts npm `test`, `test:watch` ; `prepublishOnly` = `test && build`
+- README : section outils complètement réécrite (16 outils groupés en 3 catégories) + légende format compact
+- CHANGELOG v0.3.0 détaillé
+- Bump version 0.2.0 → 0.3.0
+
+### Décisions & raisons
+
+- **Format compact par défaut + verbose opt-in** plutôt que tout JSON : le LLM consomme typiquement 5-10× moins de tokens sur une réponse avec 30 tâches. Mais quand il a besoin du body complet ou de tous les champs, `verbose: true` débloque le full Graph payload.
+- **Marqueurs ASCII `[!]`/`[v]`/`[>]`** plutôt que des emojis : meilleure tokenisation et lisible cross-clients.
+- **`$select` systématique** : économie double (réseau Graph + tokens LLM en sortie). Liste des champs DEFAULT_TASK_SELECT couvre les besoins courants ; `verbose: true` ne change PAS les champs récupérés (ils restent limités au $select default), il change seulement le format de sortie.
+- **Tests vitest mockés** plutôt que tests d'intégration réels : pas de dépendance au compte MS, exécution en CI possible, rapide. Trade-off : ne couvre pas les vraies erreurs Graph (typos d'endpoint, schema drift).
+- **Tests qui ne valident pas la valeur exacte de l'URL encodée** : URLSearchParams encode `$` en `%24` mais template literal le laisse brut. Tests décodent l'URL avant assertion → robustes aux deux conventions.
+
+### Problèmes rencontrés / contournements
+
+- 2 tests cassés au premier run sur encodage URL inconsistant entre `?$select=...` (template literal, raw `$`) et `URLSearchParams` (encode `$` en `%24`, espaces en `+`). Fix : `decodeURIComponent(url.replace(/\\+/g, " "))` côté assertion.
+- tsconfig `include: ["src/**/*"]` aurait compilé `graph.test.ts` dans dist/. Ajout `exclude: ["src/**/*.test.ts"]` pour préserver le tarball npm propre.
+
+### Prochaines étapes suggérées
+
+1. `git add . && git commit && git push` v0.3.0
+2. `npm publish --access public` (avec le granular access token déjà configuré)
+3. Test E2E réel : `npx -y @mag-cie/mcp-microsoft-todo@0.3.0` depuis fresh clone, valider les nouveaux outils via Claude
+4. v0.4 : partage de listes via Graph beta `permissions` endpoint (nécessite scope `Tasks.ReadWrite.Shared` à ajouter sur l'App Reg)
+5. v0.5 : pagination auto sur listTasks (suit `@odata.nextLink` quand top n'est pas spécifié)
+
+---
+
 ## [2026-05-04 16:30] — Auth validée + smoke test E2E OK
 
 ### Ce qui a été fait
