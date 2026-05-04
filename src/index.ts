@@ -51,9 +51,10 @@ import {
   formatSummaryCompact,
   formatBatchCompact,
 } from "./formatters.js";
+import { t } from "./i18n.js";
 
 const server = new Server(
-  { name: "microsoft-todo", version: "1.0.1" },
+  { name: "microsoft-todo", version: "1.1.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -885,8 +886,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const lists = await listTaskLists({ paginate: a.paginate });
         return out(lists, a.verbose, (ls) =>
           ls.length === 0
-            ? "No lists."
-            : `${ls.length} list(s):\n${ls.map(formatListCompact).join("\n")}`
+            ? t.noLists
+            : `${t.lists(ls.length)}\n${ls.map(formatListCompact).join("\n")}`
         );
       }
       case "list_tasks": {
@@ -899,18 +900,18 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
         return out(tasks, a.verbose, (ts) =>
           ts.length === 0
-            ? "No tasks."
-            : `${ts.length} task(s):\n${ts.map(formatTaskCompact).join("\n")}`
+            ? t.noTasks
+            : `${t.tasks(ts.length)}\n${ts.map(formatTaskCompact).join("\n")}`
         );
       }
       case "get_task": {
         const a = schemas.get_task.strict().parse(args);
-        const t = await getTask(a.list_id, a.task_id);
-        return out(t, a.verbose, formatTaskCompact);
+        const task = await getTask(a.list_id, a.task_id);
+        return out(task, a.verbose, formatTaskCompact);
       }
       case "create_task": {
         const a = schemas.create_task.strict().parse(args);
-        const t = await createTask(a.list_id, {
+        const task = await createTask(a.list_id, {
           title: a.title,
           body: a.body,
           importance: a.importance,
@@ -922,11 +923,11 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           reminderDateTime: a.reminder_date_time,
           reminderTimeZone: a.reminder_time_zone,
         });
-        return out(t, a.verbose, formatTaskCompact);
+        return out(task, a.verbose, formatTaskCompact);
       }
       case "update_task": {
         const a = schemas.update_task.strict().parse(args);
-        const t = await updateTask(a.list_id, a.task_id, {
+        const task = await updateTask(a.list_id, a.task_id, {
           title: a.title,
           status: a.status,
           importance: a.importance,
@@ -939,22 +940,22 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           reminderDateTime: a.reminder_date_time,
           reminderTimeZone: a.reminder_time_zone,
         });
-        return out(t, a.verbose, formatTaskCompact);
+        return out(task, a.verbose, formatTaskCompact);
       }
       case "complete_task": {
         const a = schemas.complete_task.strict().parse(args);
-        const t = await completeTask(a.list_id, a.task_id);
-        return out(t, a.verbose, formatTaskCompact);
+        const task = await completeTask(a.list_id, a.task_id);
+        return out(task, a.verbose, formatTaskCompact);
       }
       case "delete_task": {
         const a = schemas.delete_task.strict().parse(args);
         await deleteTask(a.list_id, a.task_id);
-        return text(`Task ${a.task_id} deleted.`);
+        return text(t.taskDeleted(a.task_id));
       }
       case "move_task": {
         const a = schemas.move_task.strict().parse(args);
-        const t = await moveTask(a.source_list_id, a.task_id, a.target_list_id);
-        return out(t, a.verbose, (x) => `Moved. New ID: ${formatTaskCompact(x)}`);
+        const moved = await moveTask(a.source_list_id, a.task_id, a.target_list_id);
+        return out(moved, a.verbose, (x) => t.moved(formatTaskCompact(x)));
       }
       case "search_tasks": {
         const a = schemas.search_tasks.strict().parse(args);
@@ -976,7 +977,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
         return out(items, a.verbose, (xs) =>
           xs.length === 0
-            ? "No sub-items."
+            ? t.noSubItems
             : xs.map(formatChecklistCompact).join("\n")
         );
       }
@@ -1001,7 +1002,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "delete_checklist_item": {
         const a = schemas.delete_checklist_item.strict().parse(args);
         await deleteChecklistItem(a.list_id, a.task_id, a.item_id);
-        return text(`Sub-item ${a.item_id} deleted.`);
+        return text(t.subItemDeleted(a.item_id));
       }
       case "list_linked_resources": {
         const a = schemas.list_linked_resources.strict().parse(args);
@@ -1010,7 +1011,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
         return out(rs, a.verbose, (xs) =>
           xs.length === 0
-            ? "No linked resources."
+            ? t.noLinkedRes
             : xs.map(formatLinkedCompact).join("\n")
         );
       }
@@ -1027,7 +1028,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "delete_linked_resource": {
         const a = schemas.delete_linked_resource.strict().parse(args);
         await deleteLinkedResource(a.list_id, a.task_id, a.resource_id);
-        return text(`Linked resource ${a.resource_id} deleted.`);
+        return text(t.linkedDeleted(a.resource_id));
       }
       case "batch_create_tasks": {
         const a = schemas.batch_create_tasks.strict().parse(args);
@@ -1072,7 +1073,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
         return out(exts, a.verbose, (xs) =>
           xs.length === 0
-            ? "No extensions."
+            ? t.noExtensions
             : xs.map(formatExtensionCompact).join("\n")
         );
       }
@@ -1089,7 +1090,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "delete_extension": {
         const a = schemas.delete_extension.strict().parse(args);
         await deleteTaskExtension(a.list_id, a.task_id, a.extension_name);
-        return text(`Extension ${a.extension_name} deleted.`);
+        return text(t.extensionDeleted(a.extension_name));
       }
       case "list_overdue_tasks": {
         const a = schemas.list_overdue_tasks.strict().parse(args ?? {});
@@ -1124,12 +1125,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return text(ics);
       }
       default:
-        throw new Error(`Unknown tool: ${name}`);
+        throw new Error(t.unknownTool(name));
     }
   } catch (err: any) {
     return {
       isError: true,
-      content: [{ type: "text", text: `Error: ${err.message}` }],
+      content: [{ type: "text", text: t.error(err.message) }],
     };
   }
 });

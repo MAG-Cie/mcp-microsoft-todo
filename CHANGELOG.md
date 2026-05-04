@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-05-04
+
+### Added
+- **i18n for compact-format strings** — server-side localization of the short labels returned by the compact format (`No tasks.`, `Due today:`, `Overdue:`, `OK:`, `Errors:`, `Task X deleted.`, `Error: …`, etc.). 4 locales bundled: **en** (default), **fr**, **es**, **de**.
+- New file `src/i18n.ts` with locale resolution: `MCP_LOCALE` env → `LC_ALL` → `LANG` → fallback `en`. Only the first 2 chars are inspected; unsupported locale → `en`.
+- Configure via `env` in your MCP client config:
+  ```json
+  { "env": { "MCP_LOCALE": "fr" } }
+  ```
+- **Note**: This is a marginal improvement — Claude already translates the English compact strings transparently when the user prompts in another language. Use `MCP_LOCALE` only if you want the raw MCP output to read natively in a given language (saves a few tokens, slightly cleaner LLM context).
+
+### Changed
+- Bump version `1.0.1` → `1.1.0`
+- All user-facing short strings in `src/formatters.ts` and `src/index.ts` now route through `t.*` (the locale bundle)
+- The `t` identifier is reserved for the i18n table — internal handler variables previously named `t` (task results) renamed to `task`/`moved` to avoid shadowing
+
 ## [1.0.1] - 2026-05-04
 
 ### Security

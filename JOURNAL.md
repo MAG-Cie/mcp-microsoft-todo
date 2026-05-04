@@ -1,3 +1,38 @@
+## [2026-05-04 20:30] — v1.1.0: i18n for compact-format strings (en/fr/es/de)
+
+### What was done
+
+- Created `src/i18n.ts` with locale resolution (`MCP_LOCALE` env → `LC_ALL` → `LANG` → fallback `en`) and a `Messages` interface with 24 keys covering all user-facing short strings
+- Bundled 4 locales: en (default), fr, es, de
+- Routed every compact-format short label through `t.*`:
+  - `formatSearchCompact`: "No results." / "X result(s):"
+  - `formatSummaryCompact`: header, "Due today:", "Overdue:" sections
+  - `formatBatchCompact`: "N ok / M err", "OK:", "Errors:", "(no detail)"
+  - `index.ts` handlers: "No tasks.", "No lists.", "No sub-items.", "No linked resources.", "No extensions."
+  - Deletion confirmations: "Task X deleted.", "Sub-item X deleted.", "Linked resource X deleted.", "Extension X deleted."
+  - Move: "Moved. New ID: …"
+  - Error catch: "Error: …"
+  - Unknown tool: "Unknown tool: X"
+- Renamed local handler vars `t` (TodoTask results) to `task`/`moved` to avoid shadowing the imported i18n table
+- Updated README with a new "🌍 Localization" section explaining that **the MCP works in any language out of the box** (Claude translates) and that `MCP_LOCALE` is just a marginal optimization for the raw output strings
+- Bumped version 1.0.1 → 1.1.0 (minor — new feature, fully backward compatible)
+
+### Decisions & rationale
+
+- **Locale only affects the short labels, not Microsoft Graph data**: task titles/bodies/categories come from Microsoft and are returned untouched. Localizing them would be both pointless and incorrect (user content is in user's chosen language).
+- **`MCP_LOCALE` not auto-detected from MCP client/Claude**: there's no MCP protocol field for "current user locale". So we rely on env vars (configurable per MCP client) or POSIX `LANG`.
+- **Snapshot tests stay green** because default locale is `en` and tests run with no `MCP_LOCALE` set. Localized snapshots are not added — would multiply test cases by 4 for marginal value.
+- **Bundled rather than lazy-loaded**: only 4 locales × ~20 short strings each, so the i18n bundle adds ~2KB to the dist. Lazy loading would be over-engineering.
+- **`t` identifier collision** with the convention of using `t` for "task" required renaming local handler vars. Trade-off accepted — `t` is the ergonomic standard for translation tables (i18next, lingui, react-intl).
+
+### Next steps
+
+1. Commit + push + npm publish v1.1.0
+2. Verify CI green
+3. Future: add more locales on user request (it, pt, nl, ja, zh…)
+
+---
+
 ## [2026-05-04 19:30] — v1.0.1: security + performance audit follow-through
 
 ### What was done

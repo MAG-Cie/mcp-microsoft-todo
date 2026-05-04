@@ -117,6 +117,14 @@ For a personal Microsoft account, add `env`:
 }
 ```
 
+To localize the compact-format strings (optional, see [Localization](#-localization)):
+
+```json
+{
+  "env": { "MS_TENANT": "consumers", "MCP_LOCALE": "fr" }
+}
+```
+
 **3. Restart Claude Desktop COMPLETELY** (not just close the window):
 - **Windows**: right-click systray icon → Quit, then relaunch
 - **macOS**: ⌘+Q then relaunch
@@ -267,6 +275,35 @@ By default, tools return a **compact text format** (one line per item) to save L
 - `due:`, `rem:`, `rec:`, `cat:`, `body:` fields shown only when populated
 
 To get the **full Graph JSON**, pass `verbose: true` to any read tool.
+
+---
+
+## 🌍 Localization
+
+The MCP works in **any language out of the box** — Claude reads the data the server returns and replies to the user in whatever language they prompted in. Try `"List my tasks"`, `"Liste mes tâches"`, `"Zeig meine Aufgaben"`, `"我的任务"` — all work.
+
+Optionally, you can localize the compact-format short labels returned by the server itself (`No tasks.`, `Due today:`, `Overdue:`, `Task X deleted.`, etc.) — this is a marginal improvement (saves a few tokens, slightly cleaner LLM context). Set `MCP_LOCALE` in your env:
+
+| Locale | Code |
+|---|---|
+| English (default) | `en` |
+| Français | `fr` |
+| Español | `es` |
+| Deutsch | `de` |
+
+Resolution order: `MCP_LOCALE` → `LC_ALL` → `LANG` → fallback `en`. Only the first 2 chars are inspected (so `fr_FR.UTF-8` works). Unsupported locale → falls back to `en`.
+
+```json
+{
+  "mcpServers": {
+    "microsoft-todo": {
+      "command": "npx",
+      "args": ["-y", "@mag-cie/mcp-microsoft-todo"],
+      "env": { "MCP_LOCALE": "fr" }
+    }
+  }
+}
+```
 
 ---
 

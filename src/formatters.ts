@@ -17,6 +17,7 @@ import type {
   TodoTask,
   TodoTaskList,
 } from "./graph.js";
+import { t } from "./i18n.js";
 
 const STATUS_MARKER: Record<TodoTask["status"], string> = {
   notStarted: "",
@@ -86,39 +87,37 @@ export function formatExtensionCompact(e: OpenExtension): string {
 }
 
 export function formatSearchCompact(results: SearchResult[]): string {
-  if (results.length === 0) return "No results.";
+  if (results.length === 0) return t.noResults;
   const byList = new Map<string, { name: string; tasks: TodoTask[] }>();
   for (const r of results) {
     const e = byList.get(r.list.id) ?? { name: r.list.displayName, tasks: [] };
     e.tasks.push(r.task);
     byList.set(r.list.id, e);
   }
-  const lines: string[] = [`${results.length} result(s):`];
+  const lines: string[] = [t.results(results.length)];
   for (const [listId, { name, tasks }] of byList) {
     lines.push(`\n${JSON.stringify(name)} (${listId}) — ${tasks.length}:`);
-    for (const t of tasks) lines.push(`  ${formatTaskCompact(t)}`);
+    for (const task of tasks) lines.push(`  ${formatTaskCompact(task)}`);
   }
   return lines.join("\n");
 }
 
 export function formatSummaryCompact(s: DailySummary): string {
-  const lines: string[] = [
-    `${s.date} — ${s.totalDueToday} due today, ${s.totalOverdue} overdue`,
-  ];
+  const lines: string[] = [t.summaryHeader(s.date, s.totalDueToday, s.totalOverdue)];
   const dueLists = s.byList.filter((l) => l.dueToday.length > 0);
   if (dueLists.length > 0) {
-    lines.push("\nDue today:");
+    lines.push("\n" + t.dueTodaySection);
     for (const l of dueLists) {
       lines.push(`  ${JSON.stringify(l.list.displayName)} (${l.list.id}):`);
-      for (const t of l.dueToday) lines.push(`    ${formatTaskCompact(t)}`);
+      for (const task of l.dueToday) lines.push(`    ${formatTaskCompact(task)}`);
     }
   }
   const lateLists = s.byList.filter((l) => l.overdue.length > 0);
   if (lateLists.length > 0) {
-    lines.push("\nOverdue:");
+    lines.push("\n" + t.overdueSection);
     for (const l of lateLists) {
       lines.push(`  ${JSON.stringify(l.list.displayName)} (${l.list.id}):`);
-      for (const t of l.overdue) lines.push(`    ${formatTaskCompact(t)}`);
+      for (const task of l.overdue) lines.push(`    ${formatTaskCompact(task)}`);
     }
   }
   return lines.join("\n");
@@ -130,17 +129,17 @@ export function formatBatchCompact<T>(
 ): string {
   const ok = results.filter((r) => r.ok);
   const err = results.filter((r) => !r.ok);
-  const lines: string[] = [`${ok.length} ok / ${err.length} err`];
+  const lines: string[] = [t.okErr(ok.length, err.length)];
   if (ok.length > 0 && formatItem) {
-    lines.push("OK:");
+    lines.push(t.okHeader);
     for (const r of ok) {
       if (r.result) lines.push(`  [${r.index}] ${formatItem(r.result)}`);
     }
   }
   if (err.length > 0) {
-    lines.push("Errors:");
+    lines.push(t.errHeader);
     for (const r of err) {
-      lines.push(`  [${r.index}] HTTP ${r.status} — ${r.error ?? "(no detail)"}`);
+      lines.push(`  [${r.index}] HTTP ${r.status} — ${r.error ?? t.noDetail}`);
     }
   }
   return lines.join("\n");
