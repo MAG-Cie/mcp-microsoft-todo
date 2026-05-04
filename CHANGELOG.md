@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-05-04
+
+### Added
+- **`--auth` CLI flag** for standalone device-code auth: `npx -y @mag-cie/mcp-microsoft-todo --auth`. Use this BEFORE wiring the MCP into Claude Code/Desktop to pre-populate the token cache. Solves the "stuck on first call" UX where the device code is printed to MCP stderr but the MCP client (Claude Code, Claude Desktop) doesn't surface it to the user.
+
+### Notes
+- No source-of-truth change to runtime behavior. The MCP still uses MSAL silent refresh + automatic device-code fallback when called as a regular MCP server. The `--auth` flag is just a convenience to make the first sign-in interactive in a normal terminal.
+
 ## [1.1.0] - 2026-05-04
 
 ### Added

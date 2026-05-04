@@ -42,17 +42,26 @@ claude mcp add --transport stdio microsoft-todo --env MS_TENANT=consumers -- npx
 claude mcp list
 ```
 
-**First use:** start `claude`, then type a prompt that calls a tool:
+**First use — recommended: pre-auth in a terminal first** to avoid the "stuck on first MCP call" issue (where the device code is printed to MCP stderr but Claude Code doesn't surface it):
 
-> List my Microsoft To Do tasks
-
-On first call, the server prints in the MCP logs:
-
-```
-To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code XXXXXXXXX
+```bash
+# macOS / Linux
+MS_TENANT=consumers npx -y @mag-cie/mcp-microsoft-todo@latest --auth
 ```
 
-Visit the URL, enter the code, sign in. The token is cached in `~/.mcp-microsoft-todo/token-cache.json` and refreshed automatically — you'll never have to do this again.
+```powershell
+# Windows PowerShell
+$env:MS_TENANT="consumers"; npx -y @mag-cie/mcp-microsoft-todo@latest --auth
+```
+
+You'll see:
+```
+To sign in, use a web browser to open the page https://www.microsoft.com/link and enter the code XXXXXXXXX
+```
+
+Visit the URL, enter the code, sign in. The token is cached in `~/.mcp-microsoft-todo/token-cache.json` and refreshed automatically — you'll never have to do this again. Now go to Claude Code and any prompt that calls a tool will work instantly.
+
+> Skip the pre-auth step if you're feeling lucky — the MCP will trigger the device code flow on first call too. The code goes to the Claude Code MCP log file (look in `%USERPROFILE%\.claude\logs\` on Windows or `~/.claude/logs/` elsewhere).
 
 **Update to the latest version:**
 
@@ -133,29 +142,23 @@ To localize the compact-format strings (optional, see [Localization](#-localizat
 
 In Claude Desktop, look at the **🔌 plug** or **🔧 tools** icon at the bottom right of the input area — you should see `microsoft-todo` listed.
 
-**5. First auth:**
-
-⚠️ Claude Desktop doesn't expose MCP logs in an obvious way. The device code appears in:
-- **Windows**: `%APPDATA%\Claude\logs\mcp-server-microsoft-todo.log`
-- **macOS**: `~/Library/Logs/Claude/mcp-server-microsoft-todo.log`
-
-**Easier trick — pre-generate the token cache:**
-
-Before configuring Claude Desktop, run in a terminal:
+**5. First auth — recommended pre-auth in a terminal:**
 
 ```bash
 # macOS / Linux
-MS_TENANT=consumers npx -y @mag-cie/mcp-microsoft-todo
+MS_TENANT=consumers npx -y @mag-cie/mcp-microsoft-todo@latest --auth
 ```
 
 ```powershell
 # Windows PowerShell
-$env:MS_TENANT="consumers"; npx -y @mag-cie/mcp-microsoft-todo
+$env:MS_TENANT="consumers"; npx -y @mag-cie/mcp-microsoft-todo@latest --auth
 ```
 
-The server starts waiting on stdin. Ask for a tool → device code → sign-in → token cached. Ctrl+C to close.
+You'll see the device code immediately in the terminal. Visit the URL, enter the code, sign in. Token cached. Now Claude Desktop will reuse this cache — no need to fish in the logs.
 
-Now Claude Desktop reuses this `~/.mcp-microsoft-todo/token-cache.json` cache directly — no need to dig in the logs.
+Without `--auth`, the device code goes to the Claude Desktop MCP log file:
+- **Windows**: `%APPDATA%\Claude\logs\mcp-server-microsoft-todo.log`
+- **macOS**: `~/Library/Logs/Claude/mcp-server-microsoft-todo.log`
 
 **Update:** edit the version in args (`@mag-cie/mcp-microsoft-todo@latest`), restart Claude Desktop. Or let npx do its thing (npx cache ~24h).
 

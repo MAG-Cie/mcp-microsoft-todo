@@ -10,6 +10,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { getAccessToken } from "./auth.js";
 import {
   listTaskLists,
   listTasks,
@@ -54,7 +55,7 @@ import {
 import { t } from "./i18n.js";
 
 const server = new Server(
-  { name: "microsoft-todo", version: "1.1.0" },
+  { name: "microsoft-todo", version: "1.1.1" },
   { capabilities: { tools: {} } }
 );
 
@@ -1142,6 +1143,22 @@ function text(t: string) {
 // ─── Startup ───────────────────────────────────────────────────────────────
 
 async function main() {
+  // Standalone auth mode: trigger device code flow then exit.
+  // Use this BEFORE wiring the MCP into Claude Code/Desktop, to pre-populate
+  // the token cache. Avoids the "stuck on first call" UX where the device code
+  // is printed to MCP stderr but not shown to the user by the MCP client.
+  //   npx -y @mag-cie/mcp-microsoft-todo --auth
+  if (process.argv.includes("--auth")) {
+    try {
+      await getAccessToken(true);
+      console.log("\n✓ Auth successful. Token cache written. You can now use the MCP from Claude.");
+      process.exit(0);
+    } catch (err: any) {
+      console.error("\n✗ Auth failed:", err.message);
+      process.exit(1);
+    }
+  }
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write("[mcp-microsoft-todo] ready\n");
