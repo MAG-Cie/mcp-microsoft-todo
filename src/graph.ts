@@ -250,10 +250,11 @@ export async function graphBatch(
 // ─── Lists ─────────────────────────────────────────────────────────────────
 
 export async function listTaskLists(
-  opts: { select?: string; paginate?: boolean } = {}
+  opts: { paginate?: boolean } = {}
 ): Promise<TodoTaskList[]> {
-  const select = opts.select ?? DEFAULT_LIST_SELECT;
-  const path = `/me/todo/lists?$select=${encodeURIComponent(select)}`;
+  // Note: Microsoft Graph rejects $select on /me/todo/lists for personal accounts
+  // (RequestBroker--ParseUri 400). Payload is small (~few lists) so full projection is fine.
+  const path = `/me/todo/lists`;
   if (opts.paginate) return paginateAll<TodoTaskList>(path);
   const data = await graphFetch<GraphCollection<TodoTaskList>>(path);
   return data.value;
@@ -317,6 +318,19 @@ function buildTaskPayload(input: CreateTaskInput | UpdateTaskInput): Record<stri
 
 // Build a raw OData query string with literal $ prefix (Graph requires literal $,
 // URLSearchParams encodes $ as %24 which some Graph endpoints reject).
+// Encode a value for an OData query parameter. encodeURIComponent encodes characters
+// (`,` `/` `(` `)` `'` `:`) that Microsoft Graph requires literal inside $select / $orderby / $filter.
+// Restore those while keeping everything else (notably spaces, &, =) properly percent-encoded.
+function encodeODataValue(v: string): string {
+  return encodeURIComponent(v)
+    .replace(/%2C/gi, ",")
+    .replace(/%2F/gi, "/")
+    .replace(/%28/gi, "(")
+    .replace(/%29/gi, ")")
+    .replace(/%27/gi, "'")
+    .replace(/%3A/gi, ":");
+}
+
 function buildOData(opts: {
   filter?: string;
   top?: number;
@@ -324,10 +338,10 @@ function buildOData(opts: {
   select?: string;
 }): string {
   const parts: string[] = [];
-  if (opts.filter) parts.push(`$filter=${encodeURIComponent(opts.filter)}`);
+  if (opts.filter) parts.push(`$filter=${encodeODataValue(opts.filter)}`);
   if (opts.top) parts.push(`$top=${opts.top}`);
-  if (opts.orderby) parts.push(`$orderby=${encodeURIComponent(opts.orderby)}`);
-  if (opts.select) parts.push(`$select=${encodeURIComponent(opts.select)}`);
+  if (opts.orderby) parts.push(`$orderby=${encodeODataValue(opts.orderby)}`);
+  if (opts.select) parts.push(`$select=${encodeODataValue(opts.select)}`);
   return parts.length > 0 ? `?${parts.join("&")}` : "";
 }
 
@@ -337,15 +351,15 @@ export async function listTasks(
     filter?: string;
     top?: number;
     orderby?: string;
-    select?: string;
     paginate?: boolean;
   } = {}
 ): Promise<TodoTask[]> {
+  // Note: Microsoft Graph rejects $select on /me/todo/lists/{id}/tasks for personal
+  // accounts (RequestBroker--ParseUri 400). $filter / $top / $orderby work fine.
   const qs = buildOData({
     filter: opts.filter,
     top: opts.top,
     orderby: opts.orderby,
-    select: opts.select ?? DEFAULT_TASK_SELECT,
   });
   const path = `/me/todo/lists/${enc(listId)}/tasks${qs}`;
   if (opts.paginate) return paginateAll<TodoTask>(path);
@@ -355,12 +369,11 @@ export async function listTasks(
 
 export async function getTask(
   listId: string,
-  taskId: string,
-  opts: { select?: string } = {}
+  taskId: string
 ): Promise<TodoTask> {
-  const select = opts.select ?? DEFAULT_TASK_SELECT;
+  // Note: Microsoft Graph rejects $select on this endpoint for personal accounts.
   return graphFetch<TodoTask>(
-    `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}?$select=${encodeURIComponent(select)}`
+    `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}`
   );
 }
 
@@ -452,10 +465,10 @@ async function fetchTasksAcrossLists(
   }
 
   // Many lists: 1 HTTP call via $batch (still chunked by 20 internally)
+  // No $select: rejected by Graph on tasks collection for personal accounts.
   const qs = buildOData({
     filter: opts.filter,
     top,
-    select: DEFAULT_TASK_SELECT,
   });
   const requests: BatchRequest[] = lists.map((list, idx) => ({
     id: String(idx),
@@ -566,7 +579,7 @@ export async function listChecklistItems(
   opts: { select?: string; paginate?: boolean } = {}
 ): Promise<ChecklistItem[]> {
   const select = opts.select ?? DEFAULT_CHECKLIST_SELECT;
-  const path = `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/checklistItems?$select=${encodeURIComponent(select)}`;
+  const path = `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/checklistItems?$select=${encodeODataValue(select)}`;
   if (opts.paginate) return paginateAll<ChecklistItem>(path);
   const data = await graphFetch<GraphCollection<ChecklistItem>>(path);
   return data.value;
@@ -621,7 +634,7 @@ export async function listLinkedResources(
   opts: { select?: string; paginate?: boolean } = {}
 ): Promise<LinkedResource[]> {
   const select = opts.select ?? DEFAULT_LINKED_SELECT;
-  const path = `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/linkedResources?$select=${encodeURIComponent(select)}`;
+  const path = `/me/todo/lists/${enc(listId)}/tasks/${enc(taskId)}/linkedResources?$select=${encodeODataValue(select)}`;
   if (opts.paginate) return paginateAll<LinkedResource>(path);
   const data = await graphFetch<GraphCollection<LinkedResource>>(path);
   return data.value;
@@ -818,7 +831,8 @@ export async function bulkUpdateCategories(
   const getRequests: BatchRequest[] = refs.map((ref, idx) => ({
     id: String(idx),
     method: "GET",
-    url: `/me/todo/lists/${enc(ref.listId)}/tasks/${enc(ref.taskId)}?$select=id,categories`,
+    // No $select: rejected by Graph on this endpoint for personal accounts.
+    url: `/me/todo/lists/${enc(ref.listId)}/tasks/${enc(ref.taskId)}`,
   }));
   const getResponses = await graphBatch(getRequests);
   const final: Array<BatchResultItem<TodoTask>> = new Array(refs.length);

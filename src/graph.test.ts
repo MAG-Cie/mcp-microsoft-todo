@@ -75,12 +75,13 @@ describe("listTaskLists", () => {
     expect(lists[0].id).toBe("L1");
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toContain("/me/todo/lists");
-    expect(decodeURIComponent(url)).toContain("$select=");
+    // No $select: Graph rejects it on this endpoint for personal accounts.
+    expect(url).not.toContain("$select=");
   });
 });
 
 describe("listTasks", () => {
-  it("encode filter, top, orderby et select dans l'URL", async () => {
+  it("encode filter, top, orderby dans l'URL (sans $select)", async () => {
     const fetchMock = makeFetch([{ body: { value: [] } }]);
     global.fetch = fetchMock as unknown as typeof fetch;
     await listTasks("LID", {
@@ -90,11 +91,14 @@ describe("listTasks", () => {
     });
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toContain("/me/todo/lists/LID/tasks?");
-    // Literal $ (not %24) — Graph requires literal prefix
+    // Literal $ (not %24) — Graph requires literal prefix on these params
     expect(url).toContain("$filter=");
     expect(url).toContain("$top=10");
     expect(url).toContain("$orderby=");
-    expect(url).toContain("$select=");
+    // OData chars (`/`, `'`, `,`, `(`, `)`, `:`) preserved literal in $orderby/$filter
+    expect(url).toContain("$orderby=dueDateTime/dateTime");
+    // No $select: Graph rejects it on this endpoint for personal accounts.
+    expect(url).not.toContain("$select=");
   });
 });
 

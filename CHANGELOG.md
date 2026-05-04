@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-05-04
+
+### Fixed
+- **Critical: Microsoft Graph 400 (`RequestBroker--ParseUri`) on personal accounts (consumers tenant)** — Graph rejects `$select` on `/me/todo/lists`, `/me/todo/lists/{id}/tasks`, and `/me/todo/lists/{id}/tasks/{id}` for personal Microsoft accounts. Every list/task fetch was failing with HTTP 400 since v0.3.0 when `$select` was first introduced. v1.1.2 partially fixed the URL prefix (`%24` → `$`) but the `$select` parameter itself still triggered the broker error.
+- Removed `$select` from `listTaskLists`, `listTasks`, `getTask`, `fetchTasksAcrossLists` ($batch path), and `bulkUpdateCategories` (GET phase). `$select` is **kept** on `checklistItems` and `linkedResources` endpoints where Graph accepts it.
+- Added `encodeODataValue()` helper that preserves OData-required literal characters (`,` `/` `(` `)` `'` `:`) in `$filter` and `$orderby` values, while still percent-encoding everything else (notably spaces, `&`, `=`).
+
+### Notes
+- Trade-off: payload per task is slightly larger (no field projection), but the To Do task schema is bounded and well within reasonable token budget. Compact-format output (default) keeps the LLM context lean.
+- This issue affected **all** users on personal Microsoft accounts (the most common case for this MCP). Work/school accounts (Entra ID tenants) likely also hit the same restriction; the fix applies universally.
+- Diagnosed via direct Graph probe: `GET /me/todo/lists` works, `GET /me/todo/lists?$select=id,displayName` returns `RequestBroker--ParseUri` 400. Same for tasks endpoints.
+- 49/49 tests pass. End-to-end smoke test against real Graph confirms `list_task_lists` returns 8 lists and `summarize_today` returns the daily summary.
+
 ## [1.1.2] - 2026-05-04
 
 ### Fixed
