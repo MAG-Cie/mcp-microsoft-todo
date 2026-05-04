@@ -1,9 +1,9 @@
 /**
- * Auth Microsoft via MSAL device code flow.
- * Token cache persisté dans ~/.mcp-microsoft-todo/token-cache.json
+ * Microsoft auth via MSAL device code flow.
+ * Token cache persisted to ~/.mcp-microsoft-todo/token-cache.json
  *
- * Usage standalone : `npm run auth` pour faire l'auth initiale.
- * Le serveur MCP réutilise ensuite le cache + refresh silencieux.
+ * Standalone usage: `npm run auth` to perform the initial sign-in.
+ * The MCP server then reuses the cache + silent refresh.
  */
 import { PublicClientApplication, LogLevel } from "@azure/msal-node";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -14,27 +14,27 @@ import { pathToFileURL } from "node:url";
 const CACHE_DIR = join(homedir(), ".mcp-microsoft-todo");
 const CACHE_FILE = join(CACHE_DIR, "token-cache.json");
 
-// Scopes To Do — Tasks.ReadWrite.Shared permet aussi de lire les listes partagées avec toi
-// (lecture seule via Graph côté delegated). offline_access pour refresh silencieux.
+// To Do scopes — Tasks.ReadWrite.Shared also lets you read shared lists
+// (delegated read-only via Graph). offline_access for silent refresh.
 export const SCOPES = [
   "Tasks.ReadWrite",
   "Tasks.ReadWrite.Shared",
   "offline_access",
 ];
 
-// Client ID public de l'App Registration multi-tenant publiée par MAG-Cie.
-// Public car device code flow = public client (aucun secret). Override via env si fork.
+// Public client ID of the multi-tenant App Registration published by MAG&Cie.
+// Public because device code flow = public client (no secret). Override via env if forking.
 const DEFAULT_CLIENT_ID = "6ea8909b-95e0-4ef0-8b48-d5910f164c6a";
 
 const CLIENT_ID = process.env.MS_CLIENT_ID || DEFAULT_CLIENT_ID;
-const TENANT = process.env.MS_TENANT ?? "common"; // "common" = comptes perso + pro
+const TENANT = process.env.MS_TENANT ?? "common"; // "common" = personal + work accounts
 
 const beforeCacheAccess = async (cacheContext: any) => {
   try {
     const data = await readFile(CACHE_FILE, "utf-8");
     cacheContext.tokenCache.deserialize(data);
   } catch {
-    // pas de cache encore
+    // no cache yet
   }
 };
 
@@ -56,7 +56,7 @@ export function buildClient(): PublicClientApplication {
     },
     system: {
       loggerOptions: {
-        loggerCallback: () => {}, // silencieux ; sinon ça pollue stdout MCP
+        loggerCallback: () => {}, // silent; otherwise pollutes MCP stdout
         logLevel: LogLevel.Error,
       },
     },
@@ -64,12 +64,12 @@ export function buildClient(): PublicClientApplication {
 }
 
 /**
- * Récupère un access token. Tente d'abord silent (refresh), sinon device code.
+ * Acquire an access token. Tries silent (refresh) first, then device code.
  */
 export async function getAccessToken(forceInteractive = false): Promise<string> {
   if (!CLIENT_ID || CLIENT_ID === "REPLACE_WITH_YOUR_CLIENT_ID") {
     throw new Error(
-      "MS_CLIENT_ID non configuré. Soit la version installée n'a pas de client ID baked-in (fork dev), soit tu dois exporter MS_CLIENT_ID. Voir README."
+      "MS_CLIENT_ID not configured. Either the installed version has no baked-in client ID (dev fork), or you must export MS_CLIENT_ID. See README."
     );
   }
 
@@ -84,34 +84,34 @@ export async function getAccessToken(forceInteractive = false): Promise<string> 
       });
       if (result?.accessToken) return result.accessToken;
     } catch {
-      // silent fail → on tombe sur device code
+      // silent fail → fall through to device code
     }
   }
 
   const result = await pca.acquireTokenByDeviceCode({
     scopes: SCOPES,
     deviceCodeCallback: (response) => {
-      // IMPORTANT : on écrit sur stderr pour ne pas casser stdio MCP
+      // IMPORTANT: write to stderr so we don't break stdio MCP
       process.stderr.write("\n" + response.message + "\n\n");
     },
   });
 
   if (!result?.accessToken) {
-    throw new Error("Impossible d'obtenir un access token");
+    throw new Error("Failed to obtain an access token");
   }
   return result.accessToken;
 }
 
-// Exécution standalone : `tsx src/auth.ts` ou `node dist/auth.js`
-// pathToFileURL gère correctement les chemins Windows (file:///C:/... vs file://C:/...)
+// Standalone execution: `tsx src/auth.ts` or `node dist/auth.js`
+// pathToFileURL handles Windows paths correctly (file:///C:/... vs file://C:/...)
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   getAccessToken(true)
     .then(() => {
-      console.log("✓ Auth réussie. Token cache écrit dans", CACHE_FILE);
+      console.log("✓ Auth successful. Token cache written to", CACHE_FILE);
       process.exit(0);
     })
     .catch((err) => {
-      console.error("✗ Auth échouée:", err.message);
+      console.error("✗ Auth failed:", err.message);
       process.exit(1);
     });
 }

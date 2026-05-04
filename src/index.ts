@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * MCP server pour Microsoft To Do.
- * Transport : stdio (compatible Claude Code et Claude Desktop).
+ * MCP server for Microsoft To Do.
+ * Transport: stdio (compatible with Claude Code and Claude Desktop).
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -39,155 +39,25 @@ import {
   bulkUpdateCategories,
   exportTasksIcs,
   type PatternedRecurrence,
-  type BatchResultItem,
   type CreateTaskInput,
-  type OpenExtension,
-  type TodoTask,
-  type TodoTaskList,
-  type ChecklistItem,
-  type LinkedResource,
-  type SearchResult,
-  type DailySummary,
 } from "./graph.js";
-
-// ─── Formatters compacts (économie tokens) ─────────────────────────────────
-// Verbose=true → JSON complet. Sinon, format texte 1 ligne / item.
-// Markers : [!] high, [?] low, [v] completed, [>] inProgress, [w] waiting, [d] deferred.
-
-const STATUS_MARKER: Record<TodoTask["status"], string> = {
-  notStarted: "",
-  completed: "[v]",
-  inProgress: "[>]",
-  waitingOnOthers: "[w]",
-  deferred: "[d]",
-};
-
-function formatGraphDate(dt: string): string {
-  // "2026-05-04T18:00:00.0000000" → "2026-05-04T18:00" (drop µs + T00:00:00 si juste date)
-  const trimmed = dt.replace(/\.\d+$/, "").replace(/:\d{2}$/, "");
-  return trimmed.endsWith("T00:00") ? trimmed.slice(0, 10) : trimmed;
-}
-
-function formatTaskCompact(t: TodoTask): string {
-  const parts: string[] = [t.id];
-  if (t.importance === "high") parts.push("[!]");
-  else if (t.importance === "low") parts.push("[?]");
-  const sm = STATUS_MARKER[t.status];
-  if (sm) parts.push(sm);
-  parts.push(JSON.stringify(t.title));
-  if (t.dueDateTime) parts.push(`due:${formatGraphDate(t.dueDateTime.dateTime)}`);
-  if (t.isReminderOn && t.reminderDateTime)
-    parts.push(`rem:${formatGraphDate(t.reminderDateTime.dateTime)}`);
-  if (t.recurrence) parts.push(`rec:${t.recurrence.pattern.type}`);
-  if (t.categories?.length) parts.push(`cat:${t.categories.join(",")}`);
-  const bodyContent = t.body?.content?.trim();
-  if (bodyContent) {
-    const truncated =
-      bodyContent.length > 100 ? bodyContent.slice(0, 100) + "…" : bodyContent;
-    parts.push(`body:${JSON.stringify(truncated.replace(/\s+/g, " "))}`);
-  }
-  return parts.join(" ");
-}
-
-function formatListCompact(l: TodoTaskList): string {
-  const parts = [l.id, JSON.stringify(l.displayName)];
-  if (l.wellknownListName && l.wellknownListName !== "none")
-    parts.push(`wk:${l.wellknownListName}`);
-  if (l.isShared) parts.push("shared");
-  if (!l.isOwner) parts.push("not-owner");
-  return parts.join(" ");
-}
-
-function formatChecklistCompact(c: ChecklistItem): string {
-  return `${c.id} ${c.isChecked ? "[v]" : "[ ]"} ${JSON.stringify(c.displayName)}`;
-}
-
-function formatLinkedCompact(r: LinkedResource): string {
-  const parts = [r.id];
-  if (r.applicationName) parts.push(`app:${r.applicationName}`);
-  if (r.displayName) parts.push(`name:${JSON.stringify(r.displayName)}`);
-  if (r.webUrl) parts.push(`url:${r.webUrl}`);
-  if (r.externalId) parts.push(`ext:${r.externalId}`);
-  return parts.join(" ");
-}
-
-function formatSearchCompact(results: SearchResult[]): string {
-  if (results.length === 0) return "Aucun résultat.";
-  const byList = new Map<string, { name: string; tasks: TodoTask[] }>();
-  for (const r of results) {
-    const e = byList.get(r.list.id) ?? { name: r.list.displayName, tasks: [] };
-    e.tasks.push(r.task);
-    byList.set(r.list.id, e);
-  }
-  const lines: string[] = [`${results.length} résultat(s) :`];
-  for (const [listId, { name, tasks }] of byList) {
-    lines.push(`\n${JSON.stringify(name)} (${listId}) — ${tasks.length} :`);
-    for (const t of tasks) lines.push(`  ${formatTaskCompact(t)}`);
-  }
-  return lines.join("\n");
-}
-
-function formatExtensionCompact(e: OpenExtension): string {
-  const customProps = Object.entries(e)
-    .filter(
-      ([k]) =>
-        !k.startsWith("@odata") && k !== "id" && k !== "extensionName"
-    )
-    .map(([k, v]) => `${k}=${JSON.stringify(v)}`);
-  return `${e.id} name:${e.extensionName}${customProps.length ? " " + customProps.join(" ") : ""}`;
-}
-
-function formatBatchCompact<T>(
-  results: BatchResultItem<T>[],
-  formatItem?: (item: T) => string
-): string {
-  const ok = results.filter((r) => r.ok);
-  const err = results.filter((r) => !r.ok);
-  const lines: string[] = [`${ok.length} ok / ${err.length} err`];
-  if (ok.length > 0 && formatItem) {
-    lines.push("OK :");
-    for (const r of ok) {
-      if (r.result) lines.push(`  [${r.index}] ${formatItem(r.result)}`);
-    }
-  }
-  if (err.length > 0) {
-    lines.push("Erreurs :");
-    for (const r of err) {
-      lines.push(`  [${r.index}] HTTP ${r.status} — ${r.error ?? "(no detail)"}`);
-    }
-  }
-  return lines.join("\n");
-}
-
-function formatSummaryCompact(s: DailySummary): string {
-  const lines: string[] = [
-    `${s.date} — ${s.totalDueToday} due aujourd'hui, ${s.totalOverdue} en retard`,
-  ];
-  const dueLists = s.byList.filter((l) => l.dueToday.length > 0);
-  if (dueLists.length > 0) {
-    lines.push("\nDues aujourd'hui :");
-    for (const l of dueLists) {
-      lines.push(`  ${JSON.stringify(l.list.displayName)} (${l.list.id}) :`);
-      for (const t of l.dueToday) lines.push(`    ${formatTaskCompact(t)}`);
-    }
-  }
-  const lateLists = s.byList.filter((l) => l.overdue.length > 0);
-  if (lateLists.length > 0) {
-    lines.push("\nEn retard :");
-    for (const l of lateLists) {
-      lines.push(`  ${JSON.stringify(l.list.displayName)} (${l.list.id}) :`);
-      for (const t of l.overdue) lines.push(`    ${formatTaskCompact(t)}`);
-    }
-  }
-  return lines.join("\n");
-}
+import {
+  formatTaskCompact,
+  formatListCompact,
+  formatChecklistCompact,
+  formatLinkedCompact,
+  formatExtensionCompact,
+  formatSearchCompact,
+  formatSummaryCompact,
+  formatBatchCompact,
+} from "./formatters.js";
 
 const server = new Server(
-  { name: "microsoft-todo", version: "0.5.0" },
+  { name: "microsoft-todo", version: "1.0.0" },
   { capabilities: { tools: {} } }
 );
 
-// ─── Schémas Zod réutilisables ─────────────────────────────────────────────
+// ─── Reusable Zod fragments ────────────────────────────────────────────────
 
 const dayOfWeek = z.enum([
   "monday",
@@ -232,14 +102,18 @@ const verboseField = {
   verbose: z
     .boolean()
     .optional()
-    .describe("Si true : retourne le JSON complet. Sinon : format compact texte (défaut, économise les tokens)."),
+    .describe(
+      "If true: returns full JSON. Otherwise: compact text format (default, saves tokens)."
+    ),
 };
 
 const paginateField = {
   paginate: z
     .boolean()
     .optional()
-    .describe("Si true : suit @odata.nextLink jusqu'à 50 pages (récupère TOUTES les entrées). Défaut false (1 page)."),
+    .describe(
+      "If true: follows @odata.nextLink up to 50 pages (fetches ALL entries). Default false (1 page)."
+    ),
 };
 
 const taskBaseFields = {
@@ -248,7 +122,7 @@ const taskBaseFields = {
   due_date: z
     .string()
     .optional()
-    .describe("ISO 8601, ex: 2026-05-15T18:00:00"),
+    .describe("ISO 8601, e.g. 2026-05-15T18:00:00"),
   time_zone: z.string().optional().default("Europe/Paris"),
   categories: z.array(z.string()).optional(),
   recurrence: recurrenceSchema.optional(),
@@ -256,22 +130,25 @@ const taskBaseFields = {
   reminder_date_time: z
     .string()
     .optional()
-    .describe("ISO 8601 du rappel"),
+    .describe("ISO 8601 of the reminder"),
   reminder_time_zone: z.string().optional(),
 };
 
-// ─── Schémas Zod (validation runtime des args) ─────────────────────────────
+// ─── Zod tool schemas (runtime arg validation) ─────────────────────────────
 
 const schemas = {
   list_task_lists: z.object({ ...verboseField, ...paginateField }),
   list_tasks: z.object({
-    list_id: z.string().describe("ID de la liste To Do"),
+    list_id: z.string().describe("ID of the To Do list"),
     filter: z
       .string()
       .optional()
-      .describe("Filtre OData, ex: \"status ne 'completed'\""),
+      .describe("OData filter, e.g. \"status ne 'completed'\""),
     top: z.number().int().positive().max(100).optional(),
-    orderby: z.string().optional().describe("OData $orderby, ex: 'dueDateTime/dateTime asc'"),
+    orderby: z
+      .string()
+      .optional()
+      .describe("OData $orderby, e.g. 'dueDateTime/dateTime asc'"),
     ...verboseField,
     ...paginateField,
   }),
@@ -412,13 +289,11 @@ const schemas = {
     extension_name: z
       .string()
       .min(1)
-      .describe(
-        "Nom unique de l'extension, idéalement reverse-DNS, ex: 'com.example.mydata'"
-      ),
+      .describe("Unique name, ideally reverse-DNS, e.g. 'com.example.mydata'"),
     data: z
       .record(z.unknown())
       .describe(
-        "Objet JSON arbitraire (clés/valeurs) à stocker. Upsert : remplace si extension existe."
+        "Arbitrary JSON object (key/value) to store. Upsert: replaces if extension exists."
       ),
     ...verboseField,
   }),
@@ -450,18 +325,18 @@ const schemas = {
     list_ids: z
       .array(z.string())
       .optional()
-      .describe("Restreint aux listes spécifiées. Si omis : toutes les listes."),
+      .describe("Restrict to the given list IDs. If omitted: all lists."),
     include_completed: z.boolean().optional(),
     top_per_list: z.number().int().positive().max(500).optional(),
   }),
 };
 
-// ─── JSON Schemas pour ListTools (mirror simplifié des Zod) ────────────────
+// ─── JSON Schemas for ListTools (mirror of Zod, advertised to LLM) ─────────
 
 const recurrenceJsonSchema = {
   type: "object",
   description:
-    "Récurrence patternedRecurrence Microsoft Graph. Combine pattern (type, interval, ...) et range (type, startDate, ...).",
+    "Microsoft Graph patternedRecurrence. Combines pattern (type, interval, ...) and range (type, startDate, ...).",
   properties: {
     pattern: {
       type: "object",
@@ -515,7 +390,7 @@ const verboseJsonProp = {
   verbose: {
     type: "boolean",
     description:
-      "Si true : retourne le JSON complet. Sinon : format compact texte (défaut, économise les tokens).",
+      "If true: returns full JSON. Otherwise: compact text format (default, saves tokens).",
   },
 };
 
@@ -523,7 +398,7 @@ const paginateJsonProp = {
   paginate: {
     type: "boolean",
     description:
-      "Si true : suit @odata.nextLink jusqu'à 50 pages (récupère TOUTES les entrées). Défaut false.",
+      "If true: follows @odata.nextLink up to 50 pages (fetches ALL entries). Default false.",
   },
 };
 
@@ -546,7 +421,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "list_task_lists",
       description:
-        "Liste toutes les listes To Do de l'utilisateur (Tâches, Boîte de réception, listes custom).",
+        "List all the user's To Do lists (Tasks, Inbox, custom lists, etc.).",
       inputSchema: {
         type: "object",
         properties: { ...verboseJsonProp, ...paginateJsonProp },
@@ -555,7 +430,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "list_tasks",
       description:
-        "Liste les tâches d'une liste To Do. Supporte filtre OData, $orderby, et limite.",
+        "List the tasks of a To Do list. Supports OData filter, $orderby, $top, and pagination.",
       inputSchema: {
         type: "object",
         properties: {
@@ -571,7 +446,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "get_task",
-      description: "Récupère le détail d'une tâche par son ID.",
+      description: "Fetch a task's detail by ID.",
       inputSchema: {
         type: "object",
         properties: {
@@ -585,7 +460,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "create_task",
       description:
-        "Crée une nouvelle tâche dans une liste To Do. Supporte récurrence et rappel.",
+        "Create a new task in a To Do list. Supports recurrence and reminder.",
       inputSchema: {
         type: "object",
         properties: {
@@ -600,7 +475,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "update_task",
       description:
-        "Met à jour une tâche existante (titre, statut, récurrence, rappel, etc.).",
+        "Update an existing task (title, status, recurrence, reminder, etc.).",
       inputSchema: {
         type: "object",
         properties: {
@@ -625,7 +500,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "complete_task",
-      description: "Raccourci pour marquer une tâche comme complétée.",
+      description: "Shortcut to mark a task as completed.",
       inputSchema: {
         type: "object",
         properties: {
@@ -638,7 +513,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "delete_task",
-      description: "Supprime définitivement une tâche.",
+      description: "Delete a task permanently.",
       inputSchema: {
         type: "object",
         properties: {
@@ -651,7 +526,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "move_task",
       description:
-        "Déplace une tâche d'une liste à une autre. Recrée la tâche dans la liste cible (titre, body, due, recurrence, reminder, categories préservés) puis supprime l'originale. Note : les checklistItems et linkedResources NE sont PAS déplacés (limite Graph). L'ID de la tâche change.",
+        "Move a task from one list to another. Recreates the task in the target list (title, body, due, recurrence, reminder, categories preserved) then deletes the original. Note: checklistItems and linkedResources are NOT moved (Graph limitation). The task ID changes.",
       inputSchema: {
         type: "object",
         properties: {
@@ -666,7 +541,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "search_tasks",
       description:
-        "Recherche un terme dans les titres des tâches de TOUTES les listes (case-sensitive). Par défaut exclut les complétées.",
+        "Search a term in the titles of tasks across ALL lists (case-sensitive). By default excludes completed tasks.",
       inputSchema: {
         type: "object",
         properties: {
@@ -681,7 +556,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "summarize_today",
       description:
-        "Résumé des tâches dues aujourd'hui et en retard, agrégées par liste. Utile pour la question 'qu'est-ce que j'ai à faire aujourd'hui ?'.",
+        "Summary of tasks due today and overdue, aggregated per list. Useful for the question \"what do I have to do today?\".",
       inputSchema: {
         type: "object",
         properties: {
@@ -692,7 +567,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "list_checklist_items",
-      description: "Liste les sous-éléments (checklist) d'une tâche.",
+      description: "List the sub-items (checklist) of a task.",
       inputSchema: {
         type: "object",
         properties: {
@@ -706,7 +581,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "create_checklist_item",
-      description: "Ajoute un sous-élément (checklist) à une tâche.",
+      description: "Add a sub-item (checklist) to a task.",
       inputSchema: {
         type: "object",
         properties: {
@@ -721,7 +596,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "update_checklist_item",
-      description: "Modifie un sous-élément (renommer ou cocher/décocher).",
+      description: "Update a sub-item (rename or check/uncheck).",
       inputSchema: {
         type: "object",
         properties: {
@@ -737,7 +612,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "delete_checklist_item",
-      description: "Supprime un sous-élément.",
+      description: "Delete a sub-item.",
       inputSchema: {
         type: "object",
         properties: {
@@ -751,7 +626,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "list_linked_resources",
       description:
-        "Liste les ressources liées (URLs externes, refs d'apps tierces) d'une tâche.",
+        "List the linked resources (external URLs, third-party app refs) of a task.",
       inputSchema: {
         type: "object",
         properties: {
@@ -765,7 +640,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "create_linked_resource",
-      description: "Attache une ressource liée (URL ou ref externe) à une tâche.",
+      description: "Attach a linked resource (URL or external ref) to a task.",
       inputSchema: {
         type: "object",
         properties: {
@@ -782,7 +657,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "delete_linked_resource",
-      description: "Supprime une ressource liée d'une tâche.",
+      description: "Delete a linked resource from a task.",
       inputSchema: {
         type: "object",
         properties: {
@@ -796,7 +671,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "batch_create_tasks",
       description:
-        "Crée plusieurs tâches en un seul appel HTTP via Microsoft Graph $batch (jusqu'à 100 items, chunked auto par 20). Retour : statut + résultat OU erreur par item dans l'ordre. Plus économe que N appels create_task.",
+        "Create several tasks in a single HTTP call via Microsoft Graph $batch (up to 100 items, auto-chunked by 20). Returns: status + result OR error per item, in order. More efficient than N create_task calls.",
       inputSchema: {
         type: "object",
         properties: {
@@ -821,7 +696,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "batch_complete_tasks",
       description:
-        "Marque plusieurs tâches comme complétées en un seul appel HTTP $batch (jusqu'à 100 items).",
+        "Mark several tasks as completed in a single $batch HTTP call (up to 100 items).",
       inputSchema: {
         type: "object",
         properties: {
@@ -845,7 +720,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "batch_delete_tasks",
       description:
-        "Supprime plusieurs tâches en un seul appel HTTP $batch (jusqu'à 100 items).",
+        "Delete several tasks in a single $batch HTTP call (up to 100 items).",
       inputSchema: {
         type: "object",
         properties: {
@@ -869,7 +744,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "list_extensions",
       description:
-        "Liste les open extensions (metadata custom JSON arbitraire) attachées à une tâche.",
+        "List the open extensions (custom JSON metadata) attached to a task.",
       inputSchema: {
         type: "object",
         properties: {
@@ -884,7 +759,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "set_extension",
       description:
-        "Crée ou met à jour (upsert) une open extension sur une tâche. Permet d'attacher des metadata JSON arbitraires (project_id, external_ref, custom flags...) qui persistent dans Microsoft Graph.",
+        "Create or update (upsert) an open extension on a task. Lets you attach arbitrary JSON metadata (project_id, external_ref, custom flags...) that persist in Microsoft Graph.",
       inputSchema: {
         type: "object",
         properties: {
@@ -893,11 +768,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           extension_name: {
             type: "string",
             description:
-              "Nom unique, idéalement reverse-DNS, ex: 'com.example.mydata'",
+              "Unique name, ideally reverse-DNS, e.g. 'com.example.mydata'",
           },
           data: {
             type: "object",
-            description: "Objet JSON arbitraire à stocker",
+            description: "Arbitrary JSON object to store",
             additionalProperties: true,
           },
           ...verboseJsonProp,
@@ -907,7 +782,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "delete_extension",
-      description: "Supprime une open extension d'une tâche.",
+      description: "Delete an open extension from a task.",
       inputSchema: {
         type: "object",
         properties: {
@@ -921,7 +796,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "list_overdue_tasks",
       description:
-        "Liste TOUTES les tâches en retard (status ne completed et dueDateTime < aujourd'hui) sur l'ensemble des listes. Agrégé via Promise.all.",
+        "List ALL overdue tasks (status ne completed and dueDateTime < today) across every list. Aggregated via Promise.all.",
       inputSchema: {
         type: "object",
         properties: {
@@ -933,7 +808,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "list_tasks_by_category",
       description:
-        "Liste TOUTES les tâches qui contiennent une catégorie donnée, sur l'ensemble des listes. Filter OData : categories/any(c: c eq '...').",
+        "List ALL tasks containing a given category, across every list. OData filter: categories/any(c: c eq '...').",
       inputSchema: {
         type: "object",
         properties: {
@@ -948,7 +823,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "bulk_update_categories",
       description:
-        "Ajoute/retire des catégories à plusieurs tâches en un appel. 2 phases batch : GET pour lire les catégories existantes, puis PATCH avec le set mis à jour. Erreurs par item.",
+        "Add/remove categories on several tasks in one operation. 2-phase batch: GET to read existing categories, then PATCH with the updated set. Per-item errors, no global fail.",
       inputSchema: {
         type: "object",
         properties: {
@@ -974,7 +849,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "export_tasks_ics",
       description:
-        "Exporte les tâches au format iCalendar (text/calendar VTODO) pour import dans Google Calendar, Apple Calendar, Outlook, Thunderbird, etc. Recurrence convertie en RRULE quand possible. Reminder converti en VALARM.",
+        "Export tasks to iCalendar format (text/calendar VTODO) for import into Google Calendar, Apple Calendar, Outlook, Thunderbird, etc. Recurrence converted to RRULE when possible. Reminder converted to VALARM.",
       inputSchema: {
         type: "object",
         properties: {
@@ -989,7 +864,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 // ─── CallTool ──────────────────────────────────────────────────────────────
 
-// Helper : formatte selon verbose (JSON compact si true, sinon format texte)
+// Helper: format according to verbose (compact JSON if true, otherwise text format)
 function out<T>(value: T, verbose: boolean | undefined, formatter: (v: T) => string) {
   return text(verbose ? JSON.stringify(value) : formatter(value));
 }
@@ -1004,8 +879,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const lists = await listTaskLists({ paginate: a.paginate });
         return out(lists, a.verbose, (ls) =>
           ls.length === 0
-            ? "Aucune liste."
-            : `${ls.length} liste(s) :\n${ls.map(formatListCompact).join("\n")}`
+            ? "No lists."
+            : `${ls.length} list(s):\n${ls.map(formatListCompact).join("\n")}`
         );
       }
       case "list_tasks": {
@@ -1018,8 +893,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
         return out(tasks, a.verbose, (ts) =>
           ts.length === 0
-            ? "Aucune tâche."
-            : `${ts.length} tâche(s) :\n${ts.map(formatTaskCompact).join("\n")}`
+            ? "No tasks."
+            : `${ts.length} task(s):\n${ts.map(formatTaskCompact).join("\n")}`
         );
       }
       case "get_task": {
@@ -1068,12 +943,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "delete_task": {
         const a = schemas.delete_task.parse(args);
         await deleteTask(a.list_id, a.task_id);
-        return text(`Tâche ${a.task_id} supprimée.`);
+        return text(`Task ${a.task_id} deleted.`);
       }
       case "move_task": {
         const a = schemas.move_task.parse(args);
         const t = await moveTask(a.source_list_id, a.task_id, a.target_list_id);
-        return out(t, a.verbose, (x) => `Déplacée. Nouveau ID : ${formatTaskCompact(x)}`);
+        return out(t, a.verbose, (x) => `Moved. New ID: ${formatTaskCompact(x)}`);
       }
       case "search_tasks": {
         const a = schemas.search_tasks.parse(args);
@@ -1095,7 +970,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
         return out(items, a.verbose, (xs) =>
           xs.length === 0
-            ? "Aucun sous-élément."
+            ? "No sub-items."
             : xs.map(formatChecklistCompact).join("\n")
         );
       }
@@ -1120,7 +995,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "delete_checklist_item": {
         const a = schemas.delete_checklist_item.parse(args);
         await deleteChecklistItem(a.list_id, a.task_id, a.item_id);
-        return text(`Sous-élément ${a.item_id} supprimé.`);
+        return text(`Sub-item ${a.item_id} deleted.`);
       }
       case "list_linked_resources": {
         const a = schemas.list_linked_resources.parse(args);
@@ -1129,7 +1004,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
         return out(rs, a.verbose, (xs) =>
           xs.length === 0
-            ? "Aucune ressource liée."
+            ? "No linked resources."
             : xs.map(formatLinkedCompact).join("\n")
         );
       }
@@ -1146,7 +1021,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "delete_linked_resource": {
         const a = schemas.delete_linked_resource.parse(args);
         await deleteLinkedResource(a.list_id, a.task_id, a.resource_id);
-        return text(`Ressource liée ${a.resource_id} supprimée.`);
+        return text(`Linked resource ${a.resource_id} deleted.`);
       }
       case "batch_create_tasks": {
         const a = schemas.batch_create_tasks.parse(args);
@@ -1191,7 +1066,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
         return out(exts, a.verbose, (xs) =>
           xs.length === 0
-            ? "Aucune extension."
+            ? "No extensions."
             : xs.map(formatExtensionCompact).join("\n")
         );
       }
@@ -1208,7 +1083,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "delete_extension": {
         const a = schemas.delete_extension.parse(args);
         await deleteTaskExtension(a.list_id, a.task_id, a.extension_name);
-        return text(`Extension ${a.extension_name} supprimée.`);
+        return text(`Extension ${a.extension_name} deleted.`);
       }
       case "list_overdue_tasks": {
         const a = schemas.list_overdue_tasks.parse(args ?? {});
@@ -1243,12 +1118,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return text(ics);
       }
       default:
-        throw new Error(`Outil inconnu: ${name}`);
+        throw new Error(`Unknown tool: ${name}`);
     }
   } catch (err: any) {
     return {
       isError: true,
-      content: [{ type: "text", text: `Erreur: ${err.message}` }],
+      content: [{ type: "text", text: `Error: ${err.message}` }],
     };
   }
 });
@@ -1257,7 +1132,7 @@ function text(t: string) {
   return { content: [{ type: "text" as const, text: t }] };
 }
 
-// ─── Démarrage ─────────────────────────────────────────────────────────────
+// ─── Startup ───────────────────────────────────────────────────────────────
 
 async function main() {
   const transport = new StdioServerTransport();

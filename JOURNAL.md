@@ -1,180 +1,178 @@
-## [2026-05-04 18:30] — v0.5.0 : extensions + cross-list helpers + ICS export
+## [2026-05-04 19:00] — v1.0.0: stable milestone, English-first project
 
-### Ce qui a été fait
+### What was done
 
-- **Open extensions** Graph (`/me/todo/lists/{id}/tasks/{id}/extensions`) : 3 outils MCP (`list_extensions`, `set_extension`, `delete_extension`)
-- **`set_extension` upsert** : tente PATCH, si 404 alors POST avec `@odata.type` + `extensionName` (Graph requirement)
-- **Cross-list helpers** :
-  - `list_overdue_tasks` — agrège tasks status ne completed et dueDateTime < today_UTC sur toutes les listes
-  - `list_tasks_by_category` — filter OData `categories/any(c: c eq 'X')` cross-listes, échappe apostrophes
-  - `bulk_update_categories` — 2 phases batch ($batch GET pour catégories courantes, puis $batch PATCH avec set mis à jour)
-- **`export_tasks_ics`** : génère VCALENDAR avec VTODO entries, RRULE pour recurrence (FREQ/INTERVAL/BYDAY/BYMONTHDAY/UNTIL/COUNT), VALARM pour reminders, escape RFC 5545 (`\\`, `,`, `;`, `\n`)
-- Formatter compact `formatExtensionCompact` : `id name:com.example.x foo="bar"` (skip `@odata.*` props)
-- 7 tests vitest supplémentaires (26 total) : extension upsert PATCH→POST fallback, overdue filter URL, by_category escape apostrophes, bulkUpdate phases batch, export ICS structure
-- README user étoffé sections Claude Code / Claude Desktop / Cursor avec install + premier auth + update + désinstall + table troubleshooting
-- Bump version 0.4.0 → 0.5.0
+- Translated the entire project to English: tool descriptions (LLM-facing), error messages, code comments, README, CHANGELOG, JOURNAL, package.json description
+- Saved the previous French README as `README.fr.md` (kept as a French shortcut, English remains canonical)
+- LICENSE updated to `MIT © MAG&Cie` (was `Antoine Guittet / MAG-Cie`)
+- Extracted formatters from `src/index.ts` into `src/formatters.ts` (now testable in isolation)
+- Created `src/formatters.test.ts` with 23 inline snapshot tests covering all 9 compact formatters — locks the exact output strings so any future change is intentional and visible in PR diff
+- Added GitHub Actions CI workflow `.github/workflows/ci.yml`: matrix on Node 20 + 22, runs npm ci → test → build → verify dist contents (shebang preserved, all .js files present) → npm pack dry-run
+- README polished: added npm + license badges, "Example prompts" table covering the main use cases, "Upgrading from earlier versions" table with explicit migration notes per version
+- Bumped version 0.5.0 → 1.0.0 — stable API milestone: tool names, arguments, and return formats (compact + verbose) are now covered by SemVer guarantees
 
-### Décisions & raisons
+### Decisions & rationale
 
-- **Open extensions plutôt que schemas extensions Graph** : Open extensions = JSON arbitraire. Schemas extensions = strict typing à pré-déclarer. Pour le use case "stocker un project_id ou un external_ref par tâche", open extensions = simple et suffisant.
-- **Upsert via PATCH→POST fallback** plutôt qu'API séparée create/update : simplifie l'usage côté LLM (un seul outil set_extension), évite l'erreur "exists" si recall.
-- **`bulk_update_categories` en 2 phases** plutôt que payload "diff" : Graph PATCH sur categories REMPLACE le tableau entier, donc on doit lire l'existant. 2 batches successifs = 2 requêtes HTTP au lieu de N×2 sans batch.
-- **ICS RRULE limité aux patterns simples** : skip relativeMonthly/Yearly (besoin de BYDAY+BYSETPOS plus complexes). Documenté dans le code via `return null`. Les tâches avec recurrence non convertible exportent juste leur DUE simple.
+- **English first**: aligns with the global CLAUDE.md instruction ("Code, comments, variables, commit messages: English") and is the de-facto standard for npm packages targeting an international audience. The French README is retained as `README.fr.md` (common pattern for bilingual projects).
+- **MAG&Cie sole copyright** instead of personal name: matches the npm scope `@mag-cie/*` and the GitHub org `MAG-Cie`. Future commercial use or contributor licensing is cleaner if the IP holder is a single legal entity.
+- **Inline snapshots over separate `.snap` files**: snapshots live next to assertions, easier to review in PR, no separate file to track. Lock the LLM-facing output strings — these are part of the public contract for the compact format.
+- **Version 1.0.0 marker**: signals API stability. Future minor versions (1.x) won't rename tools or change return shapes (compact vs verbose JSON). Breaking changes would require 2.0.
+- **CI on Node 20 + 22**: 20 is the minimum (engines field), 22 is current LTS. Three Node versions would be overkill.
 
-### Problèmes rencontrés / contournements
+### Issues encountered
 
-- Microsoft Graph open extensions requièrent `@odata.type: microsoft.graph.openTypeExtension` à la création (POST), pas à l'update (PATCH). Le upsert helper distingue les deux cas.
-- ICS DUE field doit être en UTC (suffix Z). Le formateur force la conversion en supposant que les dateTime de Graph sans timezone explicite sont en UTC. Si l'utilisateur a des tâches avec timeZone non-UTC, l'heure affichée dans le calendrier importé pourrait être décalée. Trade-off accepté pour v0.5.
+- Translating the index.ts file (~1000 lines, lots of French tool descriptions and error messages) was the bulk of the effort. Rewrite was preferred over hundreds of small edits to ensure consistency.
+- `graph.test.ts` test descriptions remain in French (low priority — internal, not LLM-facing). Could be translated in a follow-up patch if desired.
 
-### Prochaines étapes suggérées
+### Next steps
 
-1. Commit + push + npm publish v0.5.0
-2. v1.0 stable milestone : GitHub Actions CI, tests snapshot des formatters, README polish, exemples de prompts utilisateur
-
----
-
-## [2026-05-04 17:30] — v0.4.0 : pagination + batch + scope Tasks.ReadWrite.Shared
-
-### Ce qui a été fait
-
-- **Pagination auto** via `paginateAll<T>()` helper — option `paginate: true` sur tous les `list_*` outils (suit `@odata.nextLink`, plafonné à 50 pages)
-- **Batch operations Graph $batch** : helper bas niveau `graphBatch()` + 3 outils MCP (`batch_create_tasks`, `batch_complete_tasks`, `batch_delete_tasks`). Chunked auto par 20 (limite Graph). Erreurs par item, pas de fail global.
-- Scope **`Tasks.ReadWrite.Shared`** ajouté dans `auth.ts` SCOPES (permet de lire les listes partagées avec l'utilisateur)
-- Formatter compact `formatBatchCompact` : `"N ok / M err"` + détails OK et erreurs uniquement (économie tokens)
-- 6 nouveaux tests vitest (19 total) : pagination on/off, batch ordre, batch chunking, batch erreurs partielles
-- Bump version 0.3.0 → 0.4.0
-- README : nouvelle section "Batch operations", roadmap mise à jour
-- CHANGELOG v0.4.0 détaillé
-
-### Décisions & raisons
-
-- **Pagination opt-in plutôt que par défaut** : la plupart des cas d'usage MCP (LLM affichant à l'écran) tiennent largement dans 1 page (top défaut Graph = 100). Pagination = fallback explicite quand le LLM sait qu'il y a beaucoup d'items. Évite les coûts cachés.
-- **Plafond 50 pages** dans `paginateAll` : sécurité contre runaway. À 100 items/page = 5000 max. Au-delà, il faut un meilleur design (filter, search).
-- **Batch chunking par 20** : limite Graph $batch v1.0. Le helper accepte 100 items côté API, chunke en interne. L'utilisateur n'a pas à se préoccuper de ce détail.
-- **Erreurs par item dans batch** : pas de fail global. Permet au LLM de voir lesquelles ont échoué et corriger seulement celles-là (vs tout retry).
-- **Pas de share/unshare list** : Microsoft Graph n'expose pas ces opérations pour To Do (vérifié dans la doc). On documente la limitation dans CHANGELOG. Seule la lecture des listes partagées est gérée via le nouveau scope.
-
-### Problèmes rencontrés / contournements
-
-- App Reg Azure : il faut **manuellement ajouter** `Tasks.ReadWrite.Shared` dans **API permissions > Microsoft Graph > Delegated** côté maintainer (Antoine), puis **Grant admin consent** si tenant pro. Pour le client ID baked-in, action déjà à faire post-publish.
-- Token cache existant peut ne pas inclure le nouveau scope au premier refresh silencieux. Si un appel échoue avec `InsufficientPrivileges` ou `Tasks.ReadWrite.Shared` manquant, l'utilisateur doit `rm -rf ~/.mcp-microsoft-todo` et re-`auth`.
-
-### Prochaines étapes suggérées
-
-1. Ajouter `Tasks.ReadWrite.Shared` à l'App Reg Azure côté maintainer (sinon le scope demandé sera refusé par MS)
-2. Commit + push + npm publish v0.4.0
-3. Enchaîner sur v0.5 : open extensions + cross-list helpers + ICS export
+1. Commit + push v1.0.0
+2. npm publish v1.0.0 (granular access token already configured)
+3. Confirm CI workflow runs green on the first push
+4. (Optional) Translate `graph.test.ts` test descriptions for full English consistency
+5. Roadmap beyond v1.0: v1.1 Graph beta attachments, v1.2 auto-pagination follow-on for `summarize_today`/`search_tasks`/`list_overdue_tasks`, v2.0 remote HTTP/SSE for Claude.ai custom connectors
 
 ---
 
-## [2026-05-04 17:00] — v0.3.0 : 8 features (A→H) + optimisation tokens
+## [2026-05-04 18:30] — v0.5.0: extensions + cross-list helpers + ICS export
 
-### Ce qui a été fait
+### What was done
 
-- **A** Recurrence + reminders sur create_task / update_task (mapping payload Graph)
-- **B** Checklists CRUD : 4 nouveaux outils (list/create/update/delete checklist_item)
-- **C** Linked resources : 3 nouveaux outils
-- **D** Robustesse graphFetch : retry 429 (Retry-After), retry 5xx (backoff exponentiel), retry 401 (token re-acquired), parse erreurs Graph (error.code + error.message)
-- **E** search_tasks : agrégation Promise.all sur toutes les listes, filter contains() avec échappement apostrophes
-- **F** Tests vitest : 13 tests passants (fetch + auth mockés), couvre URL builders, payloads, retry, parse erreurs, search, summarize_today
-- **G** move_task : getTask + createTask + completeTask (si applicable) + deleteTask
-- **H** summarize_today : classification dueToday vs overdue par comparaison de dates UTC
-- **Optimisation tokens** (demande explicite Antoine) :
-  - `$select` systématique sur tous les appels Graph (limite champs réseau)
-  - Format compact texte par défaut sur tous les outils de lecture (1 ligne / item, marqueurs ASCII)
-  - Param `verbose: true` opt-in pour fallback JSON complet
-  - Plus de pretty-print JSON
-- Scripts npm `test`, `test:watch` ; `prepublishOnly` = `test && build`
-- README : section outils complètement réécrite (16 outils groupés en 3 catégories) + légende format compact
-- CHANGELOG v0.3.0 détaillé
-- Bump version 0.2.0 → 0.3.0
+- Open extensions on Graph (`/me/todo/lists/{id}/tasks/{id}/extensions`): 3 MCP tools (`list_extensions`, `set_extension`, `delete_extension`)
+- `set_extension` upsert: tries PATCH; if 404, falls back to POST with `@odata.type` + `extensionName` (Graph requirement)
+- Cross-list helpers:
+  - `list_overdue_tasks` — aggregates `status ne completed` and `dueDateTime < today_UTC` tasks across all lists
+  - `list_tasks_by_category` — OData filter `categories/any(c: c eq 'X')` cross-lists, escapes apostrophes
+  - `bulk_update_categories` — 2-phase batch ($batch GET for current categories, then $batch PATCH with updated set)
+- `export_tasks_ics`: generates VCALENDAR with VTODO entries, RRULE for recurrence (FREQ/INTERVAL/BYDAY/BYMONTHDAY/UNTIL/COUNT), VALARM for reminders, RFC 5545 escape (`\\`, `,`, `;`, `\n`)
+- Compact formatter `formatExtensionCompact`: `id name:com.example.x foo="bar"` (skips `@odata.*` props)
+- 7 additional vitest tests (26 total): extension upsert PATCH→POST fallback, overdue filter URL, by_category apostrophe escape, bulkUpdate batch phases, ICS export structure
+- Expanded user README with detailed Claude Code / Claude Desktop / Cursor sections + auth troubleshooting table
+- Bumped version 0.4.0 → 0.5.0
 
-### Décisions & raisons
+### Decisions & rationale
 
-- **Format compact par défaut + verbose opt-in** plutôt que tout JSON : le LLM consomme typiquement 5-10× moins de tokens sur une réponse avec 30 tâches. Mais quand il a besoin du body complet ou de tous les champs, `verbose: true` débloque le full Graph payload.
-- **Marqueurs ASCII `[!]`/`[v]`/`[>]`** plutôt que des emojis : meilleure tokenisation et lisible cross-clients.
-- **`$select` systématique** : économie double (réseau Graph + tokens LLM en sortie). Liste des champs DEFAULT_TASK_SELECT couvre les besoins courants ; `verbose: true` ne change PAS les champs récupérés (ils restent limités au $select default), il change seulement le format de sortie.
-- **Tests vitest mockés** plutôt que tests d'intégration réels : pas de dépendance au compte MS, exécution en CI possible, rapide. Trade-off : ne couvre pas les vraies erreurs Graph (typos d'endpoint, schema drift).
-- **Tests qui ne valident pas la valeur exacte de l'URL encodée** : URLSearchParams encode `$` en `%24` mais template literal le laisse brut. Tests décodent l'URL avant assertion → robustes aux deux conventions.
+- **Open extensions** rather than schema extensions: Open extensions = arbitrary JSON. Schema extensions = strict typing pre-declared. For "store project_id or external_ref per task", open extensions are simple and sufficient.
+- **Upsert via PATCH→POST fallback** rather than separate create/update API: simplifies LLM usage (one tool `set_extension`), avoids "exists" error on re-call.
+- **`bulk_update_categories` in 2 phases** rather than diff payload: Graph PATCH on `categories` REPLACES the whole array, so we must read existing first. 2 successive batches = 2 HTTP calls instead of N×2 without batching.
+- **Limited ICS RRULE patterns**: skip relativeMonthly/Yearly (require complex BYDAY+BYSETPOS). Documented via `return null`. Tasks with non-convertible recurrence simply export their plain DUE.
 
-### Problèmes rencontrés / contournements
+### Issues encountered
 
-- 2 tests cassés au premier run sur encodage URL inconsistant entre `?$select=...` (template literal, raw `$`) et `URLSearchParams` (encode `$` en `%24`, espaces en `+`). Fix : `decodeURIComponent(url.replace(/\\+/g, " "))` côté assertion.
-- tsconfig `include: ["src/**/*"]` aurait compilé `graph.test.ts` dans dist/. Ajout `exclude: ["src/**/*.test.ts"]` pour préserver le tarball npm propre.
-
-### Prochaines étapes suggérées
-
-1. `git add . && git commit && git push` v0.3.0
-2. `npm publish --access public` (avec le granular access token déjà configuré)
-3. Test E2E réel : `npx -y @mag-cie/mcp-microsoft-todo@0.3.0` depuis fresh clone, valider les nouveaux outils via Claude
-4. v0.4 : partage de listes via Graph beta `permissions` endpoint (nécessite scope `Tasks.ReadWrite.Shared` à ajouter sur l'App Reg)
-5. v0.5 : pagination auto sur listTasks (suit `@odata.nextLink` quand top n'est pas spécifié)
+- Microsoft Graph open extensions require `@odata.type: microsoft.graph.openTypeExtension` on creation (POST), not on update (PATCH). The upsert helper handles both cases.
+- ICS DUE field must be in UTC (`Z` suffix). The formatter forces conversion assuming Graph dateTime values without explicit timezone are UTC. Tasks with non-UTC timeZone would show shifted hours when imported into a calendar app — accepted trade-off for v0.5.
 
 ---
 
-## [2026-05-04 16:30] — Auth validée + smoke test E2E OK
+## [2026-05-04 17:30] — v0.4.0: pagination + batch + Tasks.ReadWrite.Shared scope
 
-### Ce qui a été fait
+### What was done
 
-- App Reg Azure créée avec client ID `6ea8909b-95e0-4ef0-8b48-d5910f164c6a` (multi-tenant + MSA), baked dans `src/auth.ts`
-- Fix bug Windows dans `src/auth.ts` : `import.meta.url === \`file://${process.argv[1]}\`` ne matchait jamais sur Windows (URL drive letter a 3 slashes vs 2). Remplacé par `pathToFileURL(process.argv[1]).href`
-- Création `.npmignore` pour exclure `dist/**/*.md` (CLAUDE.md auto-généré ne doit pas être publié)
-- 3 tentatives device code flow pour résoudre les bugs Azure :
-  1. App Reg "Allow public client flows" = Yes (déjà OK)
-  2. Ajout plateforme **Mobile and desktop applications** avec URI `https://login.microsoftonline.com/common/oauth2/nativeclient` (manquante au départ)
-  3. `MS_TENANT=consumers` au lieu de `common` pour débloquer le compte MS perso
-- Token cache écrit dans `~/.mcp-microsoft-todo/token-cache.json`
-- Smoke test `listTaskLists()` → 8 listes To Do retournées (Tâches, ASBR, Courses, MAG & MAGARIA, Perso, Quartz Insight, Wellap, Flagged Emails)
-- Section "Troubleshooting auth" ajoutée au README documentant le fallback `MS_TENANT=consumers` + conseil InPrivate
+- Auto pagination via `paginateAll<T>()` helper — `paginate: true` option on all `list_*` tools (follows `@odata.nextLink`, capped at 50 pages)
+- Graph `$batch` operations: low-level helper `graphBatch()` + 3 MCP tools (`batch_create_tasks`, `batch_complete_tasks`, `batch_delete_tasks`). Auto-chunked by 20 (Graph limit). Per-item errors, no global fail.
+- `Tasks.ReadWrite.Shared` scope added to `auth.ts` SCOPES (allows reading lists shared with the user)
+- Compact formatter `formatBatchCompact`: `"N ok / M err"` + OK details and errors only (token saving)
+- 6 additional vitest tests (19 total): pagination on/off, batch order, batch chunking, batch partial errors
+- Bumped version 0.3.0 → 0.4.0
 
-### Décisions & raisons
+### Decisions & rationale
 
-- **Garder `common` par défaut** plutôt que basculer sur `consumers` : `consumers` casse les comptes pro/M365. `common` couvre les deux types théoriquement, et le fallback est documenté.
-- **Conserver le smoke-test.ts hors du repo** : créé puis supprimé, c'était jetable. Si on veut un vrai test E2E un jour, ajouter vitest dans Step 4.
+- **Pagination opt-in rather than default**: most MCP usage (LLM showing on-screen) fits in one page (Graph default top = 100). Pagination = explicit fallback when LLM knows there are many items. Avoids hidden costs.
+- **50-page cap in `paginateAll`**: safety against runaway. At 100 items/page = 5000 max. Beyond that, requires better design (filter, search).
+- **Batch chunked by 20**: Graph $batch v1.0 limit. The helper accepts 100 items API-side, chunks internally. The user doesn't need to worry about this detail.
+- **Per-item errors in batch**: no global fail. Lets the LLM see which ones failed and correct only those (vs. retry everything).
+- **No share/unshare list**: Microsoft Graph doesn't expose these operations for To Do (verified in docs). Limitation documented in CHANGELOG. Only reading shared lists is supported via the new scope.
 
-### Problèmes rencontrés / contournements
+### Issues encountered
 
-- **"wrongplace" page** après sign-in MSA avec `tenant=common` : non reproductible précisément, lié soit au navigateur (autres comptes MS actifs), soit à l'ambiguïté `common`. Bypass = `consumers` + InPrivate.
-- **MSAL emet l'URL `https://login.microsoft.com/device`** au lieu de l'URL canonique `https://microsoft.com/devicelogin` : pas bloquant mais surprenant. Avec `consumers` MSAL emet `https://www.microsoft.com/link` (plus clair).
-
-### Prochaines étapes suggérées
-
-1. `git init` + premier commit + remote add origin → `https://github.com/MAG-Cie/mcp-microsoft-todo.git` + push (à valider avec Antoine avant push, repo public)
-2. `npm login` (org @mag-cie) + `npm publish --access public`
-3. Test installation cliente : `npx -y @mag-cie/mcp-microsoft-todo` depuis une autre machine ou un fresh clone
-4. Step 4 améliorations : recurrence/reminders, checklists, partage de listes, retry 429, search_tasks cross-listes, tests vitest
+- Azure App Reg: must manually add `Tasks.ReadWrite.Shared` under **API permissions > Microsoft Graph > Delegated** on the maintainer side, then **Grant admin consent** if on a corporate tenant.
+- Existing token cache may not include the new scope on the first silent refresh. If a call fails with `InsufficientPrivileges` or missing `Tasks.ReadWrite.Shared`, the user must `rm -rf ~/.mcp-microsoft-todo` and re-`auth`.
 
 ---
 
-## [2026-05-04 15:30] — Pivot Phase 2 : npm distribution au lieu de HTTP/SSE
+## [2026-05-04 17:00] — v0.3.0: 8 features (A→H) + token optimization
 
-### Ce qui a été fait
+### What was done
 
-- Nettoyage des 5 fichiers config dupliqués dans `src/` (README, .gitignore, package.json, package-lock.json, tsconfig.json) — résidu d'unzip du scaffold
-- `npm install` + `npm run build` validés (dist/ généré clean)
-- Pivot du plan Phase 2 : abandon de l'option HTTP/SSE multi-user hébergée au profit d'une distribution **npm package stdio** installée localement par chaque utilisateur
-- Refactor `src/auth.ts` pour exposer un `DEFAULT_CLIENT_ID` baked-in (placeholder) avec override via `MS_CLIENT_ID` env pour les forks dev
-- `package.json` enrichi pour publish npm public : `files`, `keywords`, `repository`, `bugs`, `homepage`, `author`, `publishConfig.access`, `prepublishOnly`
-- Bump version `0.1.0` → `0.2.0`
-- README restructuré : section "Installation utilisateur final 30 sec" en tête (`npx -y @mag-cie/mcp-microsoft-todo`), section dev/contribution déplacée en bas
-- Création LICENSE (MIT), CHANGELOG.md (Keep a Changelog), JOURNAL.md
+- **A** Recurrence + reminders on `create_task` / `update_task` (Graph payload mapping)
+- **B** Checklists CRUD: 4 new tools (list/create/update/delete checklist_item)
+- **C** Linked resources: 3 new tools
+- **D** `graphFetch` resilience: retry 429 (Retry-After), retry 5xx (exponential backoff), retry 401 (token re-acquired), parse Graph errors (error.code + error.message)
+- **E** `search_tasks`: Promise.all aggregation across all lists, `contains()` filter with apostrophe escape
+- **F** vitest tests: 13 passing tests (mocked fetch + auth), covers URL builders, payloads, retry, error parsing, search, summarize_today
+- **G** `move_task`: getTask + createTask + completeTask (if applicable) + deleteTask
+- **H** `summarize_today`: classifies dueToday vs overdue by UTC date comparison
+- **Token optimization** (per Antoine's request):
+  - `$select` systematic on every Graph call (limits network fields)
+  - Compact text format default on every read tool (1 line per item, ASCII markers)
+  - `verbose: true` opt-in for full JSON fallback
+  - Dropped pretty-print JSON
+- npm scripts `test`, `test:watch`; `prepublishOnly = test && build`
+- README: tool section completely rewritten (16 tools grouped in 3 categories) + compact format legend
+- CHANGELOG v0.3.0 detailed
+- Bumped version 0.2.0 → 0.3.0
 
-### Décisions & raisons
+### Decisions & rationale
 
-- **npm package stdio plutôt que HTTP/SSE hébergé** : Antoine veut que chaque utilisateur installe et fasse tourner le MCP localement. Avantages : zéro infra, zéro stockage de tokens d'autres users (RGPD trivial), setup user 30 sec, Marche offline. Trade-off : impossible à utiliser depuis Claude.ai web (qui veut du HTTP).
-- **Client ID public baked-in** : le client ID d'une public client app (device code flow) n'est PAS un secret. Le distribuer dans le code permet aux utilisateurs finaux d'installer sans aucun setup Azure de leur côté. Surchargeable via env pour les forks dev.
-- **Multi-tenant + comptes personnels** : l'App Registration sera configurée avec "Accounts in any organizational directory and personal Microsoft accounts" pour couvrir comptes MS gratuits, Office perso, M365 pro. Antoine doit la créer une fois (M365 Dev Program ou tenant pro existant), et tous ses utilisateurs en bénéficient.
+- **Compact format default + verbose opt-in** rather than JSON everywhere: the LLM typically consumes 5–10× fewer tokens for a 30-task response. When it needs full body or all fields, `verbose: true` unlocks the full Graph payload.
+- **ASCII markers `[!]`/`[v]`/`[>]`** rather than emoji: better tokenization and readable across clients.
+- **Systematic `$select`**: double saving (Graph network + LLM output tokens). The DEFAULT_TASK_SELECT field list covers common needs; `verbose: true` does NOT change which fields are fetched (still limited by default `$select`), it only changes the output format.
+- **Mocked vitest tests** rather than real integration tests: no MS account dependency, runnable in CI, fast. Trade-off: doesn't catch real Graph errors (endpoint typos, schema drift).
 
-### Problèmes rencontrés / contournements
+### Issues encountered
 
-- Compte Microsoft personnel d'Antoine ne permet pas (en l'état) de créer une App Registration Entra ID, même avec Azure free tier activé. Workaround : créer un tenant proprement (M365 Dev Program ou tenant pro) — Antoine s'en occupe.
-- `MS_CLIENT_ID` reste à `REPLACE_WITH_YOUR_CLIENT_ID` dans `auth.ts` jusqu'à ce qu'Antoine ait son App Registration — à substituer avant `npm publish`.
+- 2 tests broke on the first run due to inconsistent URL encoding between `?$select=...` (template literal, raw `$`) and `URLSearchParams` (encodes `$` as `%24`, spaces as `+`). Fix: `decodeURIComponent(url.replace(/\\+/g, " "))` on the assertion side.
+- tsconfig `include: ["src/**/*"]` would have compiled `graph.test.ts` to dist/. Added `exclude: ["src/**/*.test.ts"]` to keep the npm tarball clean.
 
-### Prochaines étapes suggérées
+---
 
-1. Antoine crée tenant + App Registration multi-tenant + MSA, récupère client ID
-2. Substituer `REPLACE_WITH_YOUR_CLIENT_ID` dans `src/auth.ts` par le vrai client ID
-3. `npm run auth` pour valider le flow device code avec compte To Do d'Antoine
-4. `git init` + premier commit + push sur `mag-cie/mcp-microsoft-todo` GitHub
-5. `npm publish` (org `@mag-cie` doit exister sur npm, sinon créer ou changer scope)
-6. Étape 4 (améliorations) : recurrence, reminders, checklists, partage de listes
+## [2026-05-04 16:30] — Auth validated + E2E smoke test OK
+
+### What was done
+
+- Azure App Reg created with client ID `6ea8909b-95e0-4ef0-8b48-d5910f164c6a` (multi-tenant + MSA), baked into `src/auth.ts`
+- Windows bug fix in `src/auth.ts`: `import.meta.url === \`file://${process.argv[1]}\`` never matched on Windows (drive-letter URL has 3 slashes vs 2). Replaced with `pathToFileURL(process.argv[1]).href`
+- Created `.npmignore` to exclude `dist/**/*.md` (auto-generated CLAUDE.md must not be published)
+- 3 device code flow attempts to resolve Azure bugs:
+  1. App Reg "Allow public client flows" = Yes (already OK)
+  2. Added **Mobile and desktop applications** platform with URI `https://login.microsoftonline.com/common/oauth2/nativeclient` (missing initially)
+  3. `MS_TENANT=consumers` instead of `common` to unblock the personal MS account
+- Token cache written to `~/.mcp-microsoft-todo/token-cache.json`
+- Smoke test `listTaskLists()` → 8 To Do lists returned (Tasks, ASBR, Groceries, MAG & MAGARIA, Personal, Quartz Insight, Wellap, Flagged Emails)
+- "Auth troubleshooting" section added to README documenting the `MS_TENANT=consumers` fallback + InPrivate tip
+
+### Decisions & rationale
+
+- **Keep `common` as default** rather than switching to `consumers`: `consumers` breaks work/M365 accounts. `common` covers both account types theoretically, and the fallback is documented.
+- **Don't keep `smoke-test.ts` in repo**: created then deleted, throwaway. If we ever want a real E2E test, add vitest in Step 4.
+
+### Issues encountered
+
+- "wrongplace" page after MSA sign-in with `tenant=common`: not exactly reproducible, related either to the browser (other active MS accounts) or `common` ambiguity. Bypass = `consumers` + InPrivate.
+- MSAL emits the URL `https://login.microsoft.com/device` instead of the canonical `https://microsoft.com/devicelogin`: not blocking but surprising. With `consumers`, MSAL emits `https://www.microsoft.com/link` (clearer).
+
+---
+
+## [2026-05-04 15:30] — Phase 2 pivot: npm distribution instead of HTTP/SSE
+
+### What was done
+
+- Cleaned up the 5 duplicate config files in `src/` (README, .gitignore, package.json, package-lock.json, tsconfig.json) — initial scaffold unzip leftover
+- `npm install` + `npm run build` validated (dist/ generated cleanly)
+- Phase 2 plan pivot: dropped the hosted multi-user HTTP/SSE option in favor of a stdio **npm package** distribution that each user installs locally
+- Refactored `src/auth.ts` to expose a baked-in `DEFAULT_CLIENT_ID` (placeholder) with `MS_CLIENT_ID` env override for dev forks
+- `package.json` enriched for public npm publish: `files`, `keywords`, `repository`, `bugs`, `homepage`, `author`, `publishConfig.access`, `prepublishOnly`
+- Bumped version 0.1.0 → 0.2.0
+- README restructured: "30-second user install" section at the top (`npx -y @mag-cie/mcp-microsoft-todo`), dev/contribution section moved to the bottom
+- Created LICENSE (MIT), CHANGELOG.md (Keep a Changelog), JOURNAL.md
+
+### Decisions & rationale
+
+- **stdio npm package rather than hosted HTTP/SSE**: Antoine wants every user to install and run the MCP locally. Pros: zero infra, zero storage of other users' tokens (RGPD-trivial), 30-sec user setup, works offline. Trade-off: cannot be used from Claude.ai web (HTTP-only).
+- **Public client ID baked-in**: a public client app's (device code flow) client ID is NOT a secret. Distributing it in code lets end users install with zero Azure setup on their side. Overridable via env for dev forks.
+- **Multi-tenant + personal accounts**: the App Registration will be configured with "Accounts in any organizational directory and personal Microsoft accounts" to cover free MS accounts, Office personal, M365 work. Antoine creates it once (M365 Dev Program or existing work tenant), all his users benefit.
+
+### Issues encountered
+
+- Antoine's personal Microsoft account doesn't (currently) allow creating an Entra ID App Registration, even with Azure free tier activated. Workaround: create a tenant properly (M365 Dev Program or work tenant) — Antoine handled.
+- `MS_CLIENT_ID` stays at `REPLACE_WITH_YOUR_CLIENT_ID` in `auth.ts` until Antoine has his App Registration — to substitute before `npm publish`.

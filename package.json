@@ -1,7 +1,7 @@
 {
   "name": "@mag-cie/mcp-microsoft-todo",
-  "version": "0.5.0",
-  "description": "MCP server pour Microsoft To Do via Microsoft Graph API. Stdio, device code flow, install local.",
+  "version": "1.0.0",
+  "description": "MCP server for Microsoft To Do via the Microsoft Graph API. Stdio transport, MSAL device code auth, local install. Compatible with Claude Code, Claude Desktop, Cursor, and any stdio MCP client.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -44,7 +44,7 @@
     "todo",
     "tasks"
   ],
-  "author": "Antoine Guittet <antoine.guittet@mag-cie.com>",
+  "author": "MAG&Cie <antoine.guittet@mag-cie.com>",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -1,69 +1,73 @@
 # mcp-microsoft-todo
 
-MCP server pour piloter **Microsoft To Do** depuis Claude Code, Claude Desktop, ou tout client MCP compatible.
+> 🇫🇷 Version française : [README.fr.md](README.fr.md)
 
-Marche avec **n'importe quel compte Microsoft** : perso (outlook.com, hotmail.com, live.com), Office 365 perso ou pro, Microsoft 365. Aucun setup Azure côté utilisateur — juste sign-in via device code flow.
+MCP server to drive **Microsoft To Do** from Claude Code, Claude Desktop, or any MCP-compatible client.
+
+Works with **any Microsoft account**: personal (outlook.com, hotmail.com, live.com), Office 365 personal or business, Microsoft 365. **Zero Azure setup** required on the user side — just sign in via device code flow.
+
+[![npm](https://img.shields.io/npm/v/@mag-cie/mcp-microsoft-todo.svg)](https://www.npmjs.com/package/@mag-cie/mcp-microsoft-todo)
+[![license](https://img.shields.io/npm/l/@mag-cie/mcp-microsoft-todo.svg)](LICENSE)
 
 ---
 
-## 🚀 Installation utilisateur final
+## 🚀 End-user installation
 
-### Pré-requis (commun à tous les clients)
+### Prerequisites (all clients)
 
-- **Node.js 20+** installé sur ta machine ([nodejs.org](https://nodejs.org))
-- Un compte Microsoft (gratuit ou pro)
+- **Node.js 20+** ([nodejs.org](https://nodejs.org))
+- A Microsoft account (free or paid)
 
-Pas de compte Azure requis, pas d'App Registration à créer, rien à compiler.
+No Azure account required, no App Registration to create, nothing to compile.
 
 ---
 
 ### 🟦 Claude Code (CLI)
 
-**Install (1 commande) :**
+**Install (one command):**
 
 ```bash
 claude mcp add --transport stdio microsoft-todo -- npx -y @mag-cie/mcp-microsoft-todo
 ```
 
-Si tu as un **compte Microsoft personnel** (outlook.com, hotmail.com, live.com, msn.com, Office 365 perso), ajoute `MS_TENANT=consumers` :
+If you have a **personal Microsoft account** (outlook.com, hotmail.com, live.com, msn.com, Office 365 personal), add `MS_TENANT=consumers`:
 
 ```bash
 claude mcp add --transport stdio microsoft-todo --env MS_TENANT=consumers -- npx -y @mag-cie/mcp-microsoft-todo
 ```
 
-**Vérifier que c'est branché :**
+**Verify it's wired up:**
 
 ```bash
 claude mcp list
 ```
 
-**Première utilisation :** lance `claude`, puis tape un prompt qui appelle un outil :
+**First use:** start `claude`, then type a prompt that calls a tool:
 
-> Liste mes tâches Microsoft To Do
+> List my Microsoft To Do tasks
 
-Au premier appel, le serveur affiche dans les logs MCP :
+On first call, the server prints in the MCP logs:
 
 ```
 To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code XXXXXXXXX
 ```
 
-Va sur l'URL, entre le code, sign-in. Le token est mis en cache dans `~/.mcp-microsoft-todo/token-cache.json` et refresh automatique ensuite — tu n'as plus jamais à faire ça.
+Visit the URL, enter the code, sign in. The token is cached in `~/.mcp-microsoft-todo/token-cache.json` and refreshed automatically — you'll never have to do this again.
 
-**Mettre à jour vers la dernière version :**
+**Update to the latest version:**
 
 ```bash
-# Force un re-install fresh de la dernière version npm
 claude mcp remove microsoft-todo
 claude mcp add --transport stdio microsoft-todo -- npx -y @mag-cie/mcp-microsoft-todo@latest
 ```
 
-Le flag `-y` de npx accepte automatiquement le téléchargement. Si tu omets `@latest`, npx peut servir une version cachée plus ancienne.
+The `-y` flag of npx auto-accepts the download. Without `@latest`, npx may serve a stale cached version.
 
-**Désinstaller :**
+**Uninstall:**
 
 ```bash
 claude mcp remove microsoft-todo
-# Et purger le token cache :
+# Purge the token cache:
 rm -rf ~/.mcp-microsoft-todo
 ```
 
@@ -71,22 +75,22 @@ rm -rf ~/.mcp-microsoft-todo
 
 ### 🟪 Claude Desktop (app)
 
-**1. Localiser le fichier de config :**
+**1. Locate the config file:**
 
-| OS | Chemin |
+| OS | Path |
 |---|---|
 | **Windows** | `%APPDATA%\Claude\claude_desktop_config.json` |
 | **macOS** | `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | **Linux** | `~/.config/Claude/claude_desktop_config.json` |
 
-Sur Windows, tu peux y aller direct avec :
+On Windows, you can open it directly with:
 ```powershell
 notepad $env:APPDATA\Claude\claude_desktop_config.json
 ```
 
-Si le fichier n'existe pas, crée-le avec un objet JSON vide `{}` puis édite.
+If the file doesn't exist, create it with an empty JSON object `{}` then edit.
 
-**2. Ajouter la config :**
+**2. Add the config:**
 
 ```json
 {
@@ -99,7 +103,7 @@ Si le fichier n'existe pas, crée-le avec un objet JSON vide `{}` puis édite.
 }
 ```
 
-Pour un compte Microsoft personnel, ajoute `env` :
+For a personal Microsoft account, add `env`:
 
 ```json
 {
@@ -113,23 +117,23 @@ Pour un compte Microsoft personnel, ajoute `env` :
 }
 ```
 
-**3. Redémarrer Claude Desktop COMPLÈTEMENT** (pas juste fermer la fenêtre) :
-- **Windows** : clic droit sur l'icône systray → Quit, puis relancer
-- **macOS** : ⌘+Q puis relancer
+**3. Restart Claude Desktop COMPLETELY** (not just close the window):
+- **Windows**: right-click systray icon → Quit, then relaunch
+- **macOS**: ⌘+Q then relaunch
 
-**4. Vérifier que c'est branché :**
+**4. Verify it's wired up:**
 
-Dans Claude Desktop, regarde l'icône **🔌 prise** ou **🔧 outils** en bas à droite de la zone de saisie — tu dois voir `microsoft-todo` listé.
+In Claude Desktop, look at the **🔌 plug** or **🔧 tools** icon at the bottom right of the input area — you should see `microsoft-todo` listed.
 
-**5. Première auth :**
+**5. First auth:**
 
-⚠️ Claude Desktop n'expose pas les logs MCP de façon évidente. Le device code apparaît dans :
-- **Windows** : `%APPDATA%\Claude\logs\mcp-server-microsoft-todo.log`
-- **macOS** : `~/Library/Logs/Claude/mcp-server-microsoft-todo.log`
+⚠️ Claude Desktop doesn't expose MCP logs in an obvious way. The device code appears in:
+- **Windows**: `%APPDATA%\Claude\logs\mcp-server-microsoft-todo.log`
+- **macOS**: `~/Library/Logs/Claude/mcp-server-microsoft-todo.log`
 
-**Astuce plus simple — pré-générer le token cache :**
+**Easier trick — pre-generate the token cache:**
 
-Avant de configurer Claude Desktop, lance dans un terminal :
+Before configuring Claude Desktop, run in a terminal:
 
 ```bash
 # macOS / Linux
@@ -141,179 +145,223 @@ MS_TENANT=consumers npx -y @mag-cie/mcp-microsoft-todo
 $env:MS_TENANT="consumers"; npx -y @mag-cie/mcp-microsoft-todo
 ```
 
-Le serveur démarre en attente stdin. Demande un outil → device code → sign-in → token cached. Ctrl+C pour fermer.
+The server starts waiting on stdin. Ask for a tool → device code → sign-in → token cached. Ctrl+C to close.
 
-Maintenant Claude Desktop réutilise ce cache `~/.mcp-microsoft-todo/token-cache.json` directement, pas besoin de chercher dans les logs.
+Now Claude Desktop reuses this `~/.mcp-microsoft-todo/token-cache.json` cache directly — no need to dig in the logs.
 
-**Mettre à jour :** modifie la version dans args (`@mag-cie/mcp-microsoft-todo@latest`), redémarre Claude Desktop. Ou laisse npx faire le boulot (cache npx ~24h).
+**Update:** edit the version in args (`@mag-cie/mcp-microsoft-todo@latest`), restart Claude Desktop. Or let npx do its thing (npx cache ~24h).
 
 ---
 
-### 🟧 Cursor / Continue / autres clients MCP stdio
+### 🟧 Cursor / Continue / other stdio MCP clients
 
-Tout client MCP qui supporte le transport **stdio** marche pareil. Format générique :
+Any MCP client that supports the **stdio** transport works the same way. Generic format:
 
 ```
 command: npx
 args: -y @mag-cie/mcp-microsoft-todo
-env: MS_TENANT=consumers (si compte perso)
+env: MS_TENANT=consumers (if personal account)
 ```
 
-Adapte au format de config du client (souvent JSON ou TOML similaire à Claude Desktop).
+Adapt to the client's config format (often JSON or TOML similar to Claude Desktop).
 
 ---
 
-## 🆘 Troubleshooting auth
+## 💡 Example prompts
 
-| Symptôme | Solution |
+Once installed, just ask Claude in natural language. Sample prompts that exercise the main tools:
+
+| Prompt | Tool(s) |
 |---|---|
-| Page "Cette page n'est pas la bonne" après sign-in | Ajoute `MS_TENANT=consumers` (compte perso uniquement) |
-| Browser ouvre sur le mauvais compte Microsoft | Utilise une fenêtre **InPrivate/Incognito** pour le sign-in |
-| Erreur `invalid_scope` ou `Tasks.ReadWrite.Shared` | Purge le token cache et re-auth : `rm -rf ~/.mcp-microsoft-todo` |
-| `Node.js not found` ou `npx not found` | Installe Node.js 20+ depuis [nodejs.org](https://nodejs.org). Sur Windows, vérifie qu'il est dans le PATH (relance ton terminal après install) |
-| Token expiré, refresh ne marche pas | Purge le cache et re-auth |
-| Le device code n'apparaît jamais | Vérifie que le serveur est bien spawn — Claude Code : `claude mcp list` ; Claude Desktop : icône outils en bas. Si absent, vérifie le PATH de `npx` dans la config |
-| `MS_CLIENT_ID non configuré` | Tu utilises un fork dev — exporte `MS_CLIENT_ID` ou utilise la version officielle npm |
+| *"Show me all my To Do lists"* | `list_task_lists` |
+| *"What do I have to do today?"* | `summarize_today` |
+| *"Show me my overdue tasks"* | `list_overdue_tasks` |
+| *"List tasks tagged 'work'"* | `list_tasks_by_category` |
+| *"Find any task containing 'invoice'"* | `search_tasks` |
+| *"Add a daily recurring 'Workout' task"* | `create_task` (with recurrence) |
+| *"Mark these 5 tasks as done"* | `batch_complete_tasks` |
+| *"Move 'Buy bread' from Personal to Shopping"* | `move_task` |
+| *"Add a 'recipe' subtask to the cake task"* | `create_checklist_item` |
+| *"Tag all my Magaria tasks as 'urgent'"* | `bulk_update_categories` |
+| *"Export my work tasks as iCalendar"* | `export_tasks_ics` |
+| *"Attach a project_id metadata to this task"* | `set_extension` |
 
 ---
 
-## 🛠 Outils exposés
+## 🆘 Auth troubleshooting
 
-### Listes & tâches
-| Outil | Description |
+| Symptom | Solution |
 |---|---|
-| `list_task_lists` | Toutes tes listes To Do |
-| `list_tasks` | Tâches d'une liste (filtre OData, $orderby) |
-| `get_task` | Détail d'une tâche par ID |
-| `create_task` | Créer une tâche (title, body, importance, due date, categories, **récurrence, rappel**) |
-| `update_task` | Modifier titre, statut, due date, récurrence, rappel… |
-| `complete_task` | Marquer comme complétée |
-| `delete_task` | Supprimer définitivement |
-| `move_task` | Déplacer une tâche d'une liste à une autre |
-| `search_tasks` | Recherche cross-listes par titre |
-| `summarize_today` | Résumé tâches dues aujourd'hui + en retard |
+| "This page isn't right" page after sign-in | Add `MS_TENANT=consumers` (personal accounts only) |
+| Browser opens with the wrong Microsoft account | Use an **InPrivate/Incognito** window for the sign-in |
+| `invalid_scope` or `Tasks.ReadWrite.Shared` error | Purge the token cache and re-auth: `rm -rf ~/.mcp-microsoft-todo` |
+| `Node.js not found` or `npx not found` | Install Node 20+ from [nodejs.org](https://nodejs.org). On Windows, verify it's in PATH (relaunch your terminal after install) |
+| Token expired, refresh fails | Purge the cache and re-auth |
+| Device code never appears | Verify the server is spawning — Claude Code: `claude mcp list`; Claude Desktop: tools icon at the bottom. If absent, check the `npx` PATH in the config |
+| `MS_CLIENT_ID not configured` | You're using a dev fork — export `MS_CLIENT_ID` or use the official npm version |
 
-### Batch operations (économise les appels)
-| Outil | Description |
-|---|---|
-| `batch_create_tasks` | Crée jusqu'à 100 tâches en un seul appel HTTP Graph $batch |
-| `batch_complete_tasks` | Marque jusqu'à 100 tâches comme complétées en un appel |
-| `batch_delete_tasks` | Supprime jusqu'à 100 tâches en un appel |
+---
 
-### Sous-tâches (checklist items)
-| Outil | Description |
-|---|---|
-| `list_checklist_items` | Sous-éléments d'une tâche |
-| `create_checklist_item` | Ajouter un sous-élément |
-| `update_checklist_item` | Renommer / cocher / décocher |
-| `delete_checklist_item` | Supprimer un sous-élément |
+## 🛠 Available tools (24)
 
-### Ressources liées (URLs externes attachées à une tâche)
-| Outil | Description |
+### Lists & tasks
+| Tool | Description |
 |---|---|
-| `list_linked_resources` | Liste les ressources liées d'une tâche |
-| `create_linked_resource` | Attacher une URL ou ref externe |
-| `delete_linked_resource` | Supprimer une ressource liée |
+| `list_task_lists` | All your To Do lists |
+| `list_tasks` | Tasks of a list (OData filter, `$orderby`, `paginate`) |
+| `get_task` | Detail of a task by ID |
+| `create_task` | Create a task (title, body, importance, due date, categories, **recurrence, reminder**) |
+| `update_task` | Update title, status, due date, recurrence, reminder… |
+| `complete_task` | Mark as completed |
+| `delete_task` | Delete permanently |
+| `move_task` | Move a task from one list to another |
+| `search_tasks` | Cross-list search by title |
+| `summarize_today` | Summary of tasks due today + overdue |
 
-### Open extensions (metadata JSON custom)
-| Outil | Description |
+### Batch operations (saves API calls)
+| Tool | Description |
 |---|---|
-| `list_extensions` | Liste les open extensions d'une tâche |
-| `set_extension` | Upsert : crée ou met à jour une extension (project_id, external_ref, etc.) |
-| `delete_extension` | Supprimer une extension |
+| `batch_create_tasks` | Create up to 100 tasks in a single Graph `$batch` HTTP call |
+| `batch_complete_tasks` | Mark up to 100 tasks as completed in one call |
+| `batch_delete_tasks` | Delete up to 100 tasks in one call |
+
+### Sub-tasks (checklist items)
+| Tool | Description |
+|---|---|
+| `list_checklist_items` | Sub-items of a task |
+| `create_checklist_item` | Add a sub-item |
+| `update_checklist_item` | Rename / check / uncheck |
+| `delete_checklist_item` | Delete a sub-item |
+
+### Linked resources (external URLs attached to a task)
+| Tool | Description |
+|---|---|
+| `list_linked_resources` | List the linked resources of a task |
+| `create_linked_resource` | Attach a URL or external reference |
+| `delete_linked_resource` | Delete a linked resource |
+
+### Open extensions (custom JSON metadata)
+| Tool | Description |
+|---|---|
+| `list_extensions` | List the open extensions of a task |
+| `set_extension` | Upsert: create or update an extension (project_id, external_ref, etc.) |
+| `delete_extension` | Delete an extension |
 
 ### Cross-list helpers
-| Outil | Description |
+| Tool | Description |
 |---|---|
-| `list_overdue_tasks` | Toutes les tâches en retard, agrégées sur toutes les listes |
-| `list_tasks_by_category` | Toutes les tâches avec une catégorie donnée, cross-listes |
-| `bulk_update_categories` | Ajoute/retire des catégories à plusieurs tâches en 2 phases batch |
+| `list_overdue_tasks` | All overdue tasks, aggregated across all lists |
+| `list_tasks_by_category` | All tasks with a given category, cross-lists |
+| `bulk_update_categories` | Add/remove categories on many tasks in 2 batch phases |
 
 ### Export
-| Outil | Description |
+| Tool | Description |
 |---|---|
-| `export_tasks_ics` | Export iCalendar (VTODO + RRULE + VALARM) pour import Google Cal / Apple Cal / Outlook / Thunderbird |
+| `export_tasks_ics` | iCalendar export (VTODO + RRULE + VALARM) for import into Google Cal / Apple Cal / Outlook / Thunderbird |
 
-### Format de sortie
+### Output format
 
-Par défaut, les outils retournent un **format compact texte** (1 ligne / item) pour économiser les tokens du LLM. Légende :
-- `[!]` importance haute, `[?]` basse (rien si normale)
-- `[v]` complétée, `[>]` en cours, `[w]` en attente, `[d]` différée (rien si non commencée)
-- `due:`, `rem:`, `rec:`, `cat:`, `body:` champs présents uniquement si renseignés
+By default, tools return a **compact text format** (one line per item) to save LLM tokens. Legend:
+- `[!]` high importance, `[?]` low (nothing if normal)
+- `[v]` completed, `[>]` in progress, `[w]` waiting, `[d]` deferred (nothing if not started)
+- `due:`, `rem:`, `rec:`, `cat:`, `body:` fields shown only when populated
 
-Pour obtenir le **JSON Graph complet**, passer `verbose: true` à n'importe quel outil de lecture.
-
----
-
-## 🔒 Sécurité & confidentialité
-
-- Le token Microsoft est stocké **uniquement sur ta machine** dans `~/.mcp-microsoft-todo/token-cache.json`
-- Aucune donnée ne transite par les serveurs MAG-Cie
-- Tu peux révoquer l'accès à tout moment depuis https://account.live.com/consent/Manage
-- Pour purger le token local : `rm -rf ~/.mcp-microsoft-todo`
-
-Permissions Graph demandées : `Tasks.ReadWrite` + `offline_access`.
+To get the **full Graph JSON**, pass `verbose: true` to any read tool.
 
 ---
 
-## 🧑‍💻 Setup développeur (fork / contribution)
+## 🔒 Security & privacy
 
-Si tu forkes ou veux développer en local avec ta propre App Registration Azure AD :
+- The Microsoft token is stored **only on your machine** in `~/.mcp-microsoft-todo/token-cache.json`
+- No data transits through MAG&Cie servers
+- Revoke access at any time at https://account.live.com/consent/Manage
+- To purge the local token: `rm -rf ~/.mcp-microsoft-todo`
 
-### 1. Azure AD App Registration (côté maintainer/fork uniquement)
+Graph permissions requested: `Tasks.ReadWrite`, `Tasks.ReadWrite.Shared`, `offline_access`.
+
+---
+
+## 🧑‍💻 Developer setup (fork / contribution)
+
+If you fork or want to develop locally with your own Azure AD App Registration:
+
+### 1. Azure AD App Registration (maintainer/fork side only)
 
 1. https://portal.azure.com → **Microsoft Entra ID** → **App registrations** → **New registration**
-2. Name : `mcp-microsoft-todo` (libre)
-3. Supported account types : **Accounts in any organizational directory and personal Microsoft accounts**
-4. Redirect URI : laisser vide
+2. Name: `mcp-microsoft-todo` (free choice)
+3. Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**
+4. Redirect URI: leave empty
 5. Register
-6. Note le **Application (client) ID**
-7. Onglet **Authentication** → **Allow public client flows** : **Yes**
-8. Onglet **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated** → ajouter `Tasks.ReadWrite` et `offline_access`. **Grant admin consent** si tenant pro.
+6. Note the **Application (client) ID**
+7. **Authentication** tab → **Allow public client flows**: **Yes**
+8. **Authentication** tab → **Add a platform** → **Mobile and desktop applications** → check `https://login.microsoftonline.com/common/oauth2/nativeclient`
+9. **API permissions** tab → **Add a permission** → **Microsoft Graph** → **Delegated** → add `Tasks.ReadWrite`, `Tasks.ReadWrite.Shared`, and `offline_access`. **Grant admin consent** if on a corporate tenant.
 
-### 2. Build et auth locale
+### 2. Build and local auth
 
 ```bash
-git clone https://github.com/mag-cie/mcp-microsoft-todo
+git clone https://github.com/MAG-Cie/mcp-microsoft-todo
 cd mcp-microsoft-todo
 npm install
 npm run build
-export MS_CLIENT_ID="<ton-client-id>"   # PowerShell : $env:MS_CLIENT_ID="..."
+export MS_CLIENT_ID="<your-client-id>"   # PowerShell: $env:MS_CLIENT_ID="..."
 export MS_TENANT="common"
 npm run auth
 ```
 
-Le token cache sera écrit dans `~/.mcp-microsoft-todo/token-cache.json`.
+The token cache will be written to `~/.mcp-microsoft-todo/token-cache.json`.
 
-### 3. Branchement Claude Code (build local)
+### 3. Wire up Claude Code (local build)
 
 ```powershell
 # Windows PowerShell
-$env:MS_CLIENT_ID="<ton-client-id>"
+$env:MS_CLIENT_ID="<your-client-id>"
 claude mcp add --transport stdio microsoft-todo -- node "C:\path\to\mcp-microsoft-todo\dist\index.js"
 ```
 
 ```bash
 # macOS / Linux
-export MS_CLIENT_ID="<ton-client-id>"
+export MS_CLIENT_ID="<your-client-id>"
 claude mcp add --transport stdio microsoft-todo -- node /path/to/mcp-microsoft-todo/dist/index.js
 ```
 
-> ⚠️ Variables d'env doivent être visibles au moment du spawn. Sur Windows avec fnm, vérifier que la session PowerShell qui lance `claude` a bien `MS_CLIENT_ID` exportée.
+> ⚠️ Env vars must be visible at spawn time. On Windows with fnm, verify the PowerShell session that launches `claude` has `MS_CLIENT_ID` exported.
+
+### 4. Run tests
+
+```bash
+npm test           # one-shot
+npm run test:watch # watch mode
+```
+
+---
+
+## ⬆️ Upgrading from earlier versions
+
+| From | To | Action required |
+|---|---|---|
+| `0.x` | `0.4.0+` | Re-auth required: token cache lacks the new `Tasks.ReadWrite.Shared` scope. Run `rm -rf ~/.mcp-microsoft-todo` then trigger any tool to re-auth via device code. |
+| `0.x` | `0.5.0+` | No breaking change — new tools added. Token compatible. |
+| any | `1.0.0+` | Stable API marker. Future minor versions guarantee no breaking change to tool names, args, or return formats (compact + verbose). |
 
 ---
 
 ## 🗺 Roadmap
 
-- [x] v0.1 — stdio + 6 outils CRUD
-- [x] v0.2 — npm package distribuable, client ID baked-in
-- [x] v0.3 — recurrence + reminders + checklists + linkedResources + search + move + summarize_today + retry/error robustness + tests vitest + format compact (verbose opt-in)
-- [x] v0.4 — pagination auto + batch operations $batch + scope Tasks.ReadWrite.Shared (lecture listes partagées)
-- [x] v0.5 — open extensions + cross-list helpers (overdue, by category, bulk update) + export iCalendar
-- [ ] v1.0 — milestone stable : CI GitHub Actions + tests étendus + snapshots + README polish
+- [x] v0.1 — stdio + 6 CRUD tools
+- [x] v0.2 — distributable npm package, baked-in client ID
+- [x] v0.3 — recurrence + reminders + checklists + linkedResources + search + move + summarize_today + retry/error robustness + vitest tests + compact format (verbose opt-in)
+- [x] v0.4 — auto pagination + `$batch` operations + `Tasks.ReadWrite.Shared` scope (read shared lists)
+- [x] v0.5 — open extensions + cross-list helpers (overdue, by category, bulk update) + iCalendar export
+- [x] v1.0 — stable milestone: GitHub Actions CI + extended tests + snapshot tests + README polish
+
+Possible future versions:
+- v1.1 — file attachments (Graph beta)
+- v1.2 — auto-pagination follow-on for `summarize_today` / `search_tasks` / `list_overdue_tasks`
+- v2.0 — remote HTTP/SSE transport for Claude.ai custom connectors (multi-user OAuth)
 
 ---
 
-## 📄 Licence
+## 📄 License
 
-MIT
+[MIT](LICENSE) — © MAG&Cie

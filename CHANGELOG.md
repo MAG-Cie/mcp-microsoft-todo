@@ -1,111 +1,125 @@
 # Changelog
 
-Toutes les modifications notables de ce projet seront documentées ici.
+All notable changes to this project are documented here.
 
-Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et le projet adhère à [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] - 2026-05-04
+
+### Added
+- Stable API milestone — public tool names, arguments, and return formats (compact + verbose) are now covered by SemVer guarantees
+- Project translated to English (LLM-facing tool descriptions, error messages, code comments, README, CHANGELOG, JOURNAL)
+- French README preserved as `README.fr.md`
+- LICENSE updated to MIT © MAG&Cie
+- `src/formatters.ts` — formatter functions extracted from `src/index.ts` for testability
+- `src/formatters.test.ts` — snapshot/unit tests for all 9 compact formatters (locks the exact output strings)
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`): runs on push/PR — install + test + build on Node 20 and 22
+- README polished with badges, example prompts table, upgrade-from-earlier-versions table
+
+### Changed
+- Bump version `0.5.0` → `1.0.0`
+- Tool descriptions, error messages, and source-code comments translated to English
+- README is now the canonical English version; French version moved to `README.fr.md`
 
 ## [0.5.0] - 2026-05-04
 
 ### Added
-- **Open extensions** : 3 nouveaux outils pour attacher des metadata JSON arbitraires aux tâches
-  - `list_extensions` : lister les open extensions d'une tâche (paginate supporté)
-  - `set_extension` : upsert (PATCH si existe, POST sinon) — permet de stocker `{project_id, external_ref, custom_flags...}` qui persistent dans Microsoft Graph
-  - `delete_extension` : retirer une extension
-- **Cross-list helpers** :
-  - `list_overdue_tasks` : agrège toutes les tâches en retard (status ne completed et dueDateTime < today) sur l'ensemble des listes
-  - `list_tasks_by_category` : filtre OData `categories/any(c: c eq 'X')` cross-listes, échappe apostrophes
-  - `bulk_update_categories` : ajoute/retire des catégories à plusieurs tâches en 2 phases batch (GET courantes + PATCH set mis à jour)
-- **`export_tasks_ics`** : export iCalendar (text/calendar avec VTODO) compatible Google Calendar, Apple Calendar, Outlook, Thunderbird
-  - Recurrence convertie en RRULE (FREQ + INTERVAL + BYDAY pour weekly, BYMONTHDAY pour absoluteMonthly, UNTIL/COUNT pour range endDate/numbered)
-  - Reminder converti en VALARM avec TRIGGER VALUE=DATE-TIME
-  - Importance haute/basse → PRIORITY 1/9, status → STATUS NEEDS-ACTION/IN-PROCESS/COMPLETED
-  - Échappement RFC 5545 : `\\`, `,`, `;`, `\n`
-- 7 nouveaux tests vitest (26 total) : extensions upsert PATCH→POST fallback, listOverdueTasks filter, listTasksByCategory escape, bulkUpdateCategories phases, export ICS structure VCALENDAR/VTODO/RRULE/VALARM
-- README utilisateur étoffé : sections détaillées Claude Code / Claude Desktop / Cursor avec install + premier auth + update + désinstall, table de troubleshooting auth
+- **Open extensions** — 3 new tools to attach arbitrary JSON metadata to tasks
+  - `list_extensions` — list a task's open extensions (`paginate` supported)
+  - `set_extension` — upsert (PATCH if exists, POST otherwise). Lets you store `{project_id, external_ref, custom_flags...}` persisted in Microsoft Graph
+  - `delete_extension` — remove an extension
+- **Cross-list helpers**
+  - `list_overdue_tasks` — aggregates all overdue tasks (`status ne completed and dueDateTime < today`) across every list
+  - `list_tasks_by_category` — OData filter `categories/any(c: c eq 'X')` cross-lists, escapes apostrophes
+  - `bulk_update_categories` — adds/removes categories on many tasks in 2 batch phases (GET current + PATCH updated set)
+- **`export_tasks_ics`** — iCalendar (text/calendar VTODO) export, compatible with Google Calendar, Apple Calendar, Outlook, Thunderbird
+  - Recurrence converted to RRULE (FREQ + INTERVAL + BYDAY for weekly, BYMONTHDAY for absoluteMonthly, UNTIL/COUNT for endDate/numbered)
+  - Reminder converted to VALARM with `TRIGGER VALUE=DATE-TIME`
+  - High/low importance → PRIORITY 1/9, status → STATUS NEEDS-ACTION/IN-PROCESS/COMPLETED
+  - RFC 5545 escaping: `\\`, `,`, `;`, `\n`
+- 7 additional vitest tests (26 total): extension upsert PATCH→POST fallback, overdue filter URL, by_category escape, bulkUpdateCategories phases, export ICS structure (VCALENDAR/VTODO/RRULE/VALARM)
+- Expanded user README with detailed Claude Code / Claude Desktop / Cursor sections
 
 ### Changed
 - Bump version `0.4.0` → `0.5.0`
-- Roadmap mise à jour : v0.5 cochée, prochaine étape v1.0 stable milestone
 
 ## [0.4.0] - 2026-05-04
 
 ### Added
-- **Pagination automatique** : option `paginate: true` sur `list_task_lists`, `list_tasks`, `list_checklist_items`, `list_linked_resources`. Suit `@odata.nextLink` jusqu'à 50 pages max (sécurité). Défaut `false` pour préserver le comportement existant.
-- **Batch operations Graph $batch** : 3 nouveaux outils
-  - `batch_create_tasks` : crée jusqu'à 100 tâches en un seul appel HTTP (chunké auto par 20)
-  - `batch_complete_tasks` : marque jusqu'à 100 tâches comme complétées en un appel
-  - `batch_delete_tasks` : supprime jusqu'à 100 tâches en un appel
-  - Erreurs par item ne font pas échouer le batch entier — chaque résultat porte son propre statut
-- **Helpers exportés** : `graphBatch(requests)`, `paginateAll<T>()` pour usage programmatique
-- Scope **`Tasks.ReadWrite.Shared`** ajouté à la requête d'auth — permet de lire les listes partagées avec toi (en plus de tes propres listes)
-- Format compact dédié pour résultats batch : `"N ok / M err"` + détails OK et erreurs uniquement (pas tout le payload)
-- 6 tests vitest supplémentaires : pagination on/off, batchCreate ordre préservé, batchComplete payload PATCH, batchDelete erreurs par item, chunking >20 items
+- **Automatic pagination** — `paginate: true` option on `list_task_lists`, `list_tasks`, `list_checklist_items`, `list_linked_resources`. Follows `@odata.nextLink` up to 50 pages max (safety cap). Defaults to `false` to preserve existing behavior.
+- **Graph `$batch` operations** — 3 new tools
+  - `batch_create_tasks` — create up to 100 tasks in one HTTP call (auto-chunked by 20)
+  - `batch_complete_tasks` — mark up to 100 tasks completed in one call
+  - `batch_delete_tasks` — delete up to 100 tasks in one call
+  - Per-item errors don't fail the whole batch — each result carries its own status
+- Exported helpers: `graphBatch(requests)`, `paginateAll<T>()` for programmatic use
+- Scope **`Tasks.ReadWrite.Shared`** added to the auth request — lets you read lists shared with you (in addition to your own lists)
+- Dedicated compact format for batch results: `"N ok / M err"` + OK details and errors only (not the full payload)
+- 6 additional vitest tests: pagination on/off, batch order preservation, PATCH payload, per-item errors, chunking >20 items
 
 ### Changed
 - Bump version `0.3.0` → `0.4.0`
-- `SCOPES` inclut désormais `Tasks.ReadWrite.Shared` — au prochain `npm run auth` ou prochain refresh, l'utilisateur consentira au nouveau scope (ou besoin de purger `~/.mcp-microsoft-todo/token-cache.json` si refresh silencieux ne déclenche pas le re-consent)
-- App Registration Azure : doit avoir `Tasks.ReadWrite.Shared` dans **API permissions** > **Delegated** (déjà ajouté côté maintainer pour le client ID baked-in)
+- `SCOPES` now includes `Tasks.ReadWrite.Shared` — on next `npm run auth` or refresh, the user consents to the new scope (or needs to purge `~/.mcp-microsoft-todo/token-cache.json` if silent refresh doesn't trigger re-consent)
+- Azure App Registration: must include `Tasks.ReadWrite.Shared` under **API permissions** > **Delegated** (already added on the maintainer side for the baked-in client ID)
 
 ### Notes
-- v0.4 ne couvre PAS le **partage de listes en écriture** (créer/révoquer un share) car Microsoft Graph n'expose pas cette opération programmatiquement pour To Do — le partage reste manuel via UI Microsoft. Seule la **lecture** des listes partagées est supportée via le scope `Tasks.ReadWrite.Shared`.
+- v0.4 does **not** cover **list sharing in write mode** (creating/revoking a share) because Microsoft Graph doesn't expose this operation programmatically for To Do — sharing remains manual via the Microsoft UI. Only **reading** shared lists is supported via the `Tasks.ReadWrite.Shared` scope.
 
 ## [0.3.0] - 2026-05-04
 
 ### Added
-- **Recurrence** : champs `recurrence` (patternedRecurrence Microsoft Graph) sur `create_task` et `update_task` — patterns daily / weekly / absoluteMonthly / relativeMonthly / absoluteYearly / relativeYearly avec range endDate / noEnd / numbered
-- **Reminders** : champs `is_reminder_on`, `reminder_date_time`, `reminder_time_zone` sur `create_task` et `update_task`
-- **Checklists** (sous-tâches) : 4 nouveaux outils `list_checklist_items`, `create_checklist_item`, `update_checklist_item`, `delete_checklist_item`
-- **Linked resources** : 3 nouveaux outils `list_linked_resources`, `create_linked_resource`, `delete_linked_resource` pour attacher des URLs/refs externes à une tâche
-- **`get_task`** : récupère le détail d'une tâche par ID
-- **`move_task`** : déplace une tâche d'une liste à une autre (recrée + supprime ; checklistItems/linkedResources non préservés, l'ID change)
-- **`search_tasks`** : recherche cross-listes par titre via `$filter contains()`, exclut les complétées par défaut, échappe les apostrophes
-- **`summarize_today`** : agrège les tâches dues aujourd'hui et en retard sur toutes les listes
-- **Format compact texte** par défaut sur tous les outils de lecture pour économiser les tokens LLM. Marqueurs : `[!]` high, `[?]` low, `[v]` completed, `[>]` inProgress, `[w]` waiting, `[d]` deferred. Champs `due:`, `rem:`, `rec:`, `cat:`, `body:` affichés seulement si présents.
-- **Param `verbose: true`** : opt-in pour récupérer le JSON Graph complet sur n'importe quel outil de lecture
-- **OData `$select`** systématique sur tous les appels Graph : seuls les champs utiles transitent (économie bande passante + tokens)
-- **Param `orderby`** sur `list_tasks` (ex: `dueDateTime/dateTime asc`)
-- **Retry automatique sur 429** (rate limit Graph) avec respect du header `Retry-After`
-- **Retry automatique sur 5xx** avec backoff exponentiel borné (3 tentatives)
-- **Retry automatique sur 401** : re-acquisition forcée du token puis retry une fois
-- **Parsing structuré des erreurs Graph** : extrait `error.code` et `error.message` du body JSON
-- **Tests vitest** : 13 tests sur `graph.ts` (fetch + auth mockés), couvre URL builders, payloads, retry/backoff, parse erreurs, recherche cross-listes, summarize_today
-- Scripts npm `test` et `test:watch`
-- `prepublishOnly` lance désormais `test && build` (au lieu de juste `build`)
+- **Recurrence** — `recurrence` field (Microsoft Graph `patternedRecurrence`) on `create_task` and `update_task` — daily / weekly / absoluteMonthly / relativeMonthly / absoluteYearly / relativeYearly patterns with endDate / noEnd / numbered ranges
+- **Reminders** — `is_reminder_on`, `reminder_date_time`, `reminder_time_zone` fields on `create_task` and `update_task`
+- **Checklists** (sub-tasks) — 4 new tools: `list_checklist_items`, `create_checklist_item`, `update_checklist_item`, `delete_checklist_item`
+- **Linked resources** — 3 new tools: `list_linked_resources`, `create_linked_resource`, `delete_linked_resource` for attaching external URLs/refs to a task
+- **`get_task`** — fetch task detail by ID
+- **`move_task`** — move a task from one list to another (recreate + delete; checklistItems/linkedResources not preserved, ID changes)
+- **`search_tasks`** — cross-list title search via `$filter contains()`, excludes completed by default, escapes apostrophes
+- **`summarize_today`** — aggregates tasks due today and overdue across all lists
+- **Compact text format** by default on all read tools to save LLM tokens. Markers: `[!]` high, `[?]` low, `[v]` completed, `[>]` inProgress, `[w]` waiting, `[d]` deferred. Fields `due:`, `rem:`, `rec:`, `cat:`, `body:` displayed only when present.
+- **`verbose: true`** opt-in to retrieve the full Graph JSON on any read tool
+- **Systematic OData `$select`** on every Graph call: only useful fields transit (network + token savings)
+- **`orderby`** parameter on `list_tasks` (e.g. `dueDateTime/dateTime asc`)
+- **Automatic retry on 429** (Graph rate limit) honoring `Retry-After` header
+- **Automatic retry on 5xx** with bounded exponential backoff (3 attempts)
+- **Automatic retry on 401** — forced token re-acquire then retry once
+- **Structured Graph error parsing** — extracts `error.code` and `error.message` from JSON body
+- **vitest tests** — 13 tests on `graph.ts` (mocked fetch + auth) covering URL builders, payloads, retry/backoff, error parsing, cross-list search, summarize_today
+- npm scripts `test` and `test:watch`
+- `prepublishOnly` now runs `test && build` (instead of just `build`)
 
 ### Changed
 - Bump version `0.2.0` → `0.3.0`
-- README enrichi : nouvelle section "Outils exposés" complète avec sections Listes/Sous-tâches/Ressources liées, légende du format compact, doc du param `verbose`
-- Roadmap mise à jour : v0.3 cochée, prochaines étapes v0.4 (partage de listes Graph beta) et v0.5 (pagination auto)
 
 ## [0.2.0] - 2026-05-04
 
 ### Added
-- Préparation publication npm : champs `files`, `keywords`, `repository`, `bugs`, `homepage`, `author`, `publishConfig`
-- Script `prepublishOnly` qui build avant publish
-- `MS_CLIENT_ID` baked-in : valeur par défaut dans le code (App Registration MAG-Cie multi-tenant + MSA), surchargeable via env pour les forks dev
-- LICENSE MIT à la racine
-- Section "Installation utilisateur final 30 sec" en tête du README avec exemple `npx -y @mag-cie/mcp-microsoft-todo`
-- Section "Sécurité & confidentialité" expliquant le stockage local du token et le lien de révocation Microsoft
-- Section "Troubleshooting auth" : doc fallback `MS_TENANT=consumers` pour comptes personnels qui échouent sur `common`, conseil InPrivate
-- `.npmignore` excluant `dist/**/*.md` (évite que CLAUDE.md soit publié)
-- CHANGELOG.md (ce fichier)
+- npm publish prep: `files`, `keywords`, `repository`, `bugs`, `homepage`, `author`, `publishConfig` fields
+- `prepublishOnly` script that builds before publish
+- Baked-in `MS_CLIENT_ID`: default value in code (MAG&Cie multi-tenant + MSA App Registration), overridable via env for dev forks
+- MIT LICENSE at the root
+- "30-second user install" section at the top of the README with `npx -y @mag-cie/mcp-microsoft-todo` example
+- "Security & privacy" section explaining local token storage and the Microsoft revocation link
+- "Auth troubleshooting" section: `MS_TENANT=consumers` fallback for personal accounts that fail on `common`, InPrivate browser tip
+- `.npmignore` excluding `dist/**/*.md` (prevents `CLAUDE.md` from being published)
+- CHANGELOG.md (this file)
 
 ### Changed
-- Modèle de distribution clarifié : npm package stdio installé localement par chaque utilisateur, **pas** d'hébergement multi-user partagé
-- README restructuré : user final en haut, dev/contribution en bas
+- Distribution model clarified: stdio npm package installed locally by each user, **not** a shared multi-user host
+- README restructured: end-user info on top, dev/contribution at the bottom
 - Bump version `0.1.0` → `0.2.0`
 
 ### Fixed
-- Suppression des 5 fichiers config dupliqués dans `src/` (résidu d'unzip du scaffold initial)
-- Détection d'exécution standalone dans `auth.ts` cassée sur Windows (utilise désormais `pathToFileURL` de `node:url` au lieu d'une concaténation `file://${process.argv[1]}` qui produit une URL différente de `import.meta.url` à cause du nombre de slashes pour les chemins avec lettre de drive)
+- Removed the 5 duplicate config files inside `src/` (initial scaffold unzip leftover)
+- Standalone-execution detection in `auth.ts` was broken on Windows (now uses `pathToFileURL` from `node:url` instead of `file://${process.argv[1]}` template literal which produces a different URL than `import.meta.url` due to drive-letter slash count)
 
 ## [0.1.0] - 2026-05-04
 
 ### Added
-- Scaffold initial du serveur MCP Microsoft To Do
-- Transport stdio (compatible Claude Code et Claude Desktop)
-- Auth MSAL via device code flow, token cache persisté dans `~/.mcp-microsoft-todo/token-cache.json`
-- 6 outils CRUD : `list_task_lists`, `list_tasks`, `create_task`, `update_task`, `complete_task`, `delete_task`
-- Validation runtime Zod sur tous les arguments
-- README setup Azure AD + branchement Claude Code/Desktop
-- Build TypeScript ESM strict vers `dist/`
+- Initial scaffold of the Microsoft To Do MCP server
+- stdio transport (compatible with Claude Code and Claude Desktop)
+- MSAL device code flow auth, token cache persisted in `~/.mcp-microsoft-todo/token-cache.json`
+- 6 CRUD tools: `list_task_lists`, `list_tasks`, `create_task`, `update_task`, `complete_task`, `delete_task`
+- Runtime Zod validation on all arguments
+- README with Azure AD setup + Claude Code/Desktop wiring
+- Strict ESM TypeScript build to `dist/`

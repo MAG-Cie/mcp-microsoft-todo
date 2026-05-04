@@ -1,12 +1,12 @@
 /**
- * Wrapper Microsoft Graph API pour To Do.
- * Endpoints : https://learn.microsoft.com/en-us/graph/api/resources/todo-overview
+ * Microsoft Graph API wrapper for To Do.
+ * Endpoints: https://learn.microsoft.com/en-us/graph/api/resources/todo-overview
  */
 import { getAccessToken } from "./auth.js";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-// ─── Types Graph ───────────────────────────────────────────────────────────
+// ─── Graph types ───────────────────────────────────────────────────────────
 
 export interface TodoTaskList {
   id: string;
@@ -144,13 +144,13 @@ async function graphFetch<T>(
     return (await res.json()) as T;
   }
 
-  // 401 : tente une fois de re-acquérir un token (cache potentiellement périmé)
+  // 401: try once to re-acquire a token (cache may be stale)
   if (res.status === 401 && attempt === 0) {
     await getAccessToken(true);
     return graphFetch<T>(path, init, attempt + 1);
   }
 
-  // 429 / 5xx : retry exponentiel borné
+  // 429 / 5xx: bounded exponential retry
   const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
   if (retryable && attempt < MAX_RETRIES) {
     const retryAfter = parseRetryAfterMs(res.headers.get("retry-after"));
@@ -159,7 +159,7 @@ async function graphFetch<T>(
     return graphFetch<T>(path, init, attempt + 1);
   }
 
-  // Erreur définitive : parse le body Graph pour message lisible
+  // Definitive error: parse the Graph body for a readable message
   const rawBody = await res.text();
   let detail = rawBody;
   try {
@@ -170,14 +170,14 @@ async function graphFetch<T>(
         : (parsed.error.message ?? rawBody);
     }
   } catch {
-    // body non-JSON, on garde le raw
+    // non-JSON body, keep the raw
   }
   throw new Error(`Graph ${res.status} on ${path} — ${detail}`);
 }
 
 // ─── Pagination + batch helpers ────────────────────────────────────────────
 
-// Champs minimums utiles renvoyés par défaut (économie tokens + bande passante)
+// Minimum useful fields returned by default (token + bandwidth savings)
 const DEFAULT_LIST_SELECT = "id,displayName,isOwner,isShared,wellknownListName";
 const DEFAULT_TASK_SELECT =
   "id,title,status,importance,dueDateTime,reminderDateTime,isReminderOn,categories,recurrence,body";
@@ -380,7 +380,7 @@ export async function completeTask(
   return updateTask(listId, taskId, { status: "completed" });
 }
 
-// ─── Move task entre listes (delete + recreate, Graph n'a pas de move natif) ──
+// ─── Move task across lists (delete + recreate, Graph has no native move) ────
 
 export async function moveTask(
   sourceListId: string,
@@ -407,7 +407,7 @@ export async function moveTask(
   return recreated;
 }
 
-// ─── Search cross-listes ───────────────────────────────────────────────────
+// ─── Cross-list search ────────────────────────────────────────────────────
 
 export interface SearchResult {
   list: { id: string; displayName: string };
@@ -415,8 +415,8 @@ export interface SearchResult {
 }
 
 /**
- * Recherche un terme dans les titres des tâches non-complétées de toutes les listes.
- * Utilise $filter contains() — case-sensitive côté Graph. Inclus complétées si includeCompleted.
+ * Searches a term in the titles of non-completed tasks across all lists.
+ * Uses $filter contains() — case-sensitive on Graph side. Includes completed if includeCompleted.
  */
 export async function searchTasks(
   query: string,
@@ -438,7 +438,7 @@ export async function searchTasks(
           task,
         }));
       } catch {
-        // Une liste qui échoue (ex : permissions) ne casse pas la recherche globale
+        // A failed list (e.g. permission error) doesn't break the global search
         return [];
       }
     })
@@ -487,7 +487,7 @@ export async function summarizeToday(timeZone = "Europe/Paris"): Promise<DailySu
   );
   const totalDueToday = byList.reduce((s, l) => s + l.dueToday.length, 0);
   const totalOverdue = byList.reduce((s, l) => s + l.overdue.length, 0);
-  void timeZone; // accepté pour cohérence d'API ; date "today" déduite de now en UTC
+  void timeZone; // accepted for API consistency; "today" derived from now in UTC
   return { date: today, totalDueToday, totalOverdue, byList };
 }
 
@@ -546,7 +546,7 @@ export async function deleteChecklistItem(
   );
 }
 
-// ─── Linked resources (références externes attachées à une tâche) ──────────
+// ─── Linked resources (external references attached to a task) ────────────
 
 export async function listLinkedResources(
   listId: string,
@@ -590,8 +590,8 @@ export async function deleteLinkedResource(
   );
 }
 
-// ─── Batch operations sur tâches ───────────────────────────────────────────
-// Microsoft Graph $batch : jusqu'à 20 requêtes par appel HTTP. Chunked auto.
+// ─── Batch operations on tasks ────────────────────────────────────────────
+// Microsoft Graph $batch: up to 20 requests per HTTP call. Auto-chunked.
 
 export interface BatchResultItem<T> {
   index: number;
@@ -643,7 +643,7 @@ export async function batchDeleteTasks(
   return parseBatchResponses<null>(responses, items.length);
 }
 
-// ─── Open extensions (custom JSON metadata sur tâches) ────────────────────
+// ─── Open extensions (custom JSON metadata on tasks) ─────────────────────
 
 export interface OpenExtension {
   id: string;
@@ -759,7 +759,7 @@ export async function bulkUpdateCategories(
   refs: Array<{ listId: string; taskId: string }>,
   changes: { add?: string[]; remove?: string[] }
 ): Promise<Array<BatchResultItem<TodoTask>>> {
-  // Phase 1 : GET (batch) pour récupérer les categories courantes
+  // Phase 1: GET (batch) to fetch current categories
   const getRequests: BatchRequest[] = refs.map((ref, idx) => ({
     id: String(idx),
     method: "GET",
@@ -768,7 +768,7 @@ export async function bulkUpdateCategories(
   const getResponses = await graphBatch(getRequests);
   const final: Array<BatchResultItem<TodoTask>> = new Array(refs.length);
 
-  // Phase 2 : construire les PATCH pour les GETs réussis
+  // Phase 2: build PATCH requests for successful GETs
   const patchRequests: BatchRequest[] = [];
   for (const r of getResponses) {
     const idx = Number(r.id);
@@ -835,7 +835,7 @@ function escapeIcsText(s: string): string {
 function formatIcsDate(iso: string): string {
   // "2026-05-04T18:00:00" ou "...Z" → "20260504T180000Z"
   const cleaned = iso.replace(/\.\d+/, "").replace(/Z$/, "");
-  // Découpage "YYYY-MM-DDTHH:MM:SS"
+  // Parse "YYYY-MM-DDTHH:MM:SS"
   const m = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
   if (!m) return cleaned.replace(/[-:]/g, "");
   return `${m[1]}${m[2]}${m[3]}T${m[4]}${m[5]}${m[6]}Z`;
