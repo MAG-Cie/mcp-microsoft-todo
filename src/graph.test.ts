@@ -90,10 +90,11 @@ describe("listTasks", () => {
     });
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toContain("/me/todo/lists/LID/tasks?");
-    expect(url).toContain("%24filter=");
-    expect(url).toContain("%24top=10");
-    expect(url).toContain("%24orderby=");
-    expect(url).toContain("%24select=");
+    // Literal $ (not %24) — Graph requires literal prefix
+    expect(url).toContain("$filter=");
+    expect(url).toContain("$top=10");
+    expect(url).toContain("$orderby=");
+    expect(url).toContain("$select=");
   });
 });
 

@@ -315,6 +315,22 @@ function buildTaskPayload(input: CreateTaskInput | UpdateTaskInput): Record<stri
   return payload;
 }
 
+// Build a raw OData query string with literal $ prefix (Graph requires literal $,
+// URLSearchParams encodes $ as %24 which some Graph endpoints reject).
+function buildOData(opts: {
+  filter?: string;
+  top?: number;
+  orderby?: string;
+  select?: string;
+}): string {
+  const parts: string[] = [];
+  if (opts.filter) parts.push(`$filter=${encodeURIComponent(opts.filter)}`);
+  if (opts.top) parts.push(`$top=${opts.top}`);
+  if (opts.orderby) parts.push(`$orderby=${encodeURIComponent(opts.orderby)}`);
+  if (opts.select) parts.push(`$select=${encodeURIComponent(opts.select)}`);
+  return parts.length > 0 ? `?${parts.join("&")}` : "";
+}
+
 export async function listTasks(
   listId: string,
   opts: {
@@ -325,12 +341,13 @@ export async function listTasks(
     paginate?: boolean;
   } = {}
 ): Promise<TodoTask[]> {
-  const params = new URLSearchParams();
-  if (opts.filter) params.set("$filter", opts.filter);
-  if (opts.top) params.set("$top", String(opts.top));
-  if (opts.orderby) params.set("$orderby", opts.orderby);
-  params.set("$select", opts.select ?? DEFAULT_TASK_SELECT);
-  const path = `/me/todo/lists/${enc(listId)}/tasks?${params}`;
+  const qs = buildOData({
+    filter: opts.filter,
+    top: opts.top,
+    orderby: opts.orderby,
+    select: opts.select ?? DEFAULT_TASK_SELECT,
+  });
+  const path = `/me/todo/lists/${enc(listId)}/tasks${qs}`;
   if (opts.paginate) return paginateAll<TodoTask>(path);
   const data = await graphFetch<GraphCollection<TodoTask>>(path);
   return data.value;
@@ -435,14 +452,15 @@ async function fetchTasksAcrossLists(
   }
 
   // Many lists: 1 HTTP call via $batch (still chunked by 20 internally)
-  const params = new URLSearchParams();
-  if (opts.filter) params.set("$filter", opts.filter);
-  params.set("$top", String(top));
-  params.set("$select", DEFAULT_TASK_SELECT);
+  const qs = buildOData({
+    filter: opts.filter,
+    top,
+    select: DEFAULT_TASK_SELECT,
+  });
   const requests: BatchRequest[] = lists.map((list, idx) => ({
     id: String(idx),
     method: "GET",
-    url: `/me/todo/lists/${enc(list.id)}/tasks?${params}`,
+    url: `/me/todo/lists/${enc(list.id)}/tasks${qs}`,
   }));
   const responses = await graphBatch(requests);
   const results: Array<{ list: TodoTaskList; tasks: TodoTask[]; error?: string }> = new Array(

@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-05-04
+
+### Fixed
+- **Critical: Microsoft Graph 400 on `list_tasks` and cross-list helpers** — the OData query string was built with `URLSearchParams`, which percent-encodes the `$` prefix as `%24`. While the OData spec allows this, recent Microsoft Graph behavior rejects `%24filter`, `%24top`, `%24orderby`, `%24select` with HTTP 400 on the `/me/todo/lists/{id}/tasks` endpoint.
+- Replaced `URLSearchParams` with a manual `buildOData()` helper that emits literal `$` prefix (and uses `encodeURIComponent` only on the values, where it's actually needed). All callers updated: `listTasks`, `fetchTasksAcrossLists` (used by `summarize_today`, `search_tasks`, `list_overdue_tasks`, `list_tasks_by_category`).
+- Test assertion updated to match literal-$ form (no semantic test-coverage change).
+
+### Notes
+- This was a regression from v0.4.0 when `paginate` and `orderby` parameters were added via `URLSearchParams`. Older v0.3 code path used a different builder and was unaffected. Apologies for the disruption — please upgrade to **v1.1.2** ASAP.
+
 ## [1.1.1] - 2026-05-04
 
 ### Added
