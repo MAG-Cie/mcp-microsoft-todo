@@ -1,6 +1,6 @@
 {
   "name": "@mag-cie/mcp-microsoft-todo",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "description": "MCP server for Microsoft To Do via the Microsoft Graph API. Stdio transport, MSAL device code auth, local install. Compatible with Claude Code, Claude Desktop, Cursor, and any stdio MCP client.",
   "type": "module",
   "main": "dist/index.js",

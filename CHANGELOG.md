@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-05
+
+### Added
+- **MCP tool safety annotations on every tool** ([spec 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#tool-annotations)). Each of the 28 tools now carries `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`, and a human-readable `title`. MCP clients (Claude Code, Claude Desktop, Cursor, …) can use these to auto-approve read-only calls, prompt before destructive calls, retry transient failures safely, and display friendly titles. Required for submission to the Anthropic Connector Directory.
+- New `ANNOTATIONS` constant in `src/index.ts` mapping each tool name to its annotation set, plus 4 reusable presets (`READ`, `WRITE_CREATE`, `WRITE_UPDATE`, `WRITE_DELETE`).
+- README: new `🔐 Safety annotations` section explaining the spec compliance and the per-class summary; the existing tool tables now include a `Safety` column.
+
+### Notes
+- Pure metadata addition — no behavior change, fully backward compatible.
+- `move_task` is annotated as `destructive` because the source task is deleted (a new task is created in the target list with a different id).
+- 50/50 unit tests pass; smoke test confirms all 28 tools expose annotations correctly via `tools/list`.
+
 ## [1.1.5] - 2026-05-04
 
 ### Fixed

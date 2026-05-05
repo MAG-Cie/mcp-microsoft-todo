@@ -213,62 +213,65 @@ Once installed, just ask Claude in natural language. Sample prompts that exercis
 
 ---
 
-## 🛠 Available tools (24)
+## 🛠 Available tools (28)
+
+Safety column legend: `read` = read-only, `write` = mutates state (non-idempotent create), `update` = idempotent mutation (safe to retry), `delete` = destructive (data loss). See [Safety annotations](#-safety-annotations) below for details.
 
 ### Lists & tasks
-| Tool | Description |
-|---|---|
-| `list_task_lists` | All your To Do lists |
-| `list_tasks` | Tasks of a list (OData filter, `$orderby`, `paginate`) |
-| `get_task` | Detail of a task by ID |
-| `create_task` | Create a task (title, body, importance, due date, categories, **recurrence, reminder**) |
-| `update_task` | Update title, status, due date, recurrence, reminder… |
-| `complete_task` | Mark as completed |
-| `delete_task` | Delete permanently |
-| `move_task` | Move a task from one list to another |
-| `search_tasks` | Cross-list search by title |
-| `summarize_today` | Summary of tasks due today + overdue |
+| Tool | Safety | Description |
+|---|---|---|
+| `list_task_lists` | read | All your To Do lists |
+| `list_tasks` | read | Tasks of a list (OData filter, `$orderby`, `paginate`) |
+| `get_task` | read | Detail of a task by ID |
+| `create_task` | write | Create a task (title, body, importance, due date, categories, **recurrence, reminder**) |
+| `update_task` | update | Update title, status, due date, recurrence, reminder… |
+| `complete_task` | update | Mark as completed |
+| `delete_task` | delete | Delete permanently |
+| `move_task` | delete | Move a task from one list to another (source task is deleted) |
+| `search_tasks` | read | Cross-list search by title |
+| `summarize_today` | read | Summary of tasks due today + overdue |
+| `list_all_tasks` | read | Every task across every list in one round-trip (uses Graph `$batch`) |
 
 ### Batch operations (saves API calls)
-| Tool | Description |
-|---|---|
-| `batch_create_tasks` | Create up to 100 tasks in a single Graph `$batch` HTTP call |
-| `batch_complete_tasks` | Mark up to 100 tasks as completed in one call |
-| `batch_delete_tasks` | Delete up to 100 tasks in one call |
+| Tool | Safety | Description |
+|---|---|---|
+| `batch_create_tasks` | write | Create up to 100 tasks in a single Graph `$batch` HTTP call |
+| `batch_complete_tasks` | update | Mark up to 100 tasks as completed in one call |
+| `batch_delete_tasks` | delete | Delete up to 100 tasks in one call |
 
 ### Sub-tasks (checklist items)
-| Tool | Description |
-|---|---|
-| `list_checklist_items` | Sub-items of a task |
-| `create_checklist_item` | Add a sub-item |
-| `update_checklist_item` | Rename / check / uncheck |
-| `delete_checklist_item` | Delete a sub-item |
+| Tool | Safety | Description |
+|---|---|---|
+| `list_checklist_items` | read | Sub-items of a task |
+| `create_checklist_item` | write | Add a sub-item |
+| `update_checklist_item` | update | Rename / check / uncheck |
+| `delete_checklist_item` | delete | Delete a sub-item |
 
 ### Linked resources (external URLs attached to a task)
-| Tool | Description |
-|---|---|
-| `list_linked_resources` | List the linked resources of a task |
-| `create_linked_resource` | Attach a URL or external reference |
-| `delete_linked_resource` | Delete a linked resource |
+| Tool | Safety | Description |
+|---|---|---|
+| `list_linked_resources` | read | List the linked resources of a task |
+| `create_linked_resource` | write | Attach a URL or external reference |
+| `delete_linked_resource` | delete | Delete a linked resource |
 
 ### Open extensions (custom JSON metadata)
-| Tool | Description |
-|---|---|
-| `list_extensions` | List the open extensions of a task |
-| `set_extension` | Upsert: create or update an extension (project_id, external_ref, etc.) |
-| `delete_extension` | Delete an extension |
+| Tool | Safety | Description |
+|---|---|---|
+| `list_extensions` | read | List the open extensions of a task |
+| `set_extension` | update | Upsert: create or update an extension (project_id, external_ref, etc.) |
+| `delete_extension` | delete | Delete an extension |
 
 ### Cross-list helpers
-| Tool | Description |
-|---|---|
-| `list_overdue_tasks` | All overdue tasks, aggregated across all lists |
-| `list_tasks_by_category` | All tasks with a given category, cross-lists |
-| `bulk_update_categories` | Add/remove categories on many tasks in 2 batch phases |
+| Tool | Safety | Description |
+|---|---|---|
+| `list_overdue_tasks` | read | All overdue tasks, aggregated across all lists |
+| `list_tasks_by_category` | read | All tasks with a given category, cross-lists |
+| `bulk_update_categories` | update | Add/remove categories on many tasks in 2 batch phases |
 
 ### Export
-| Tool | Description |
-|---|---|
-| `export_tasks_ics` | iCalendar export (VTODO + RRULE + VALARM) for import into Google Cal / Apple Cal / Outlook / Thunderbird |
+| Tool | Safety | Description |
+|---|---|---|
+| `export_tasks_ics` | read | iCalendar export (VTODO + RRULE + VALARM) for import into Google Cal / Apple Cal / Outlook / Thunderbird |
 
 ### Output format
 
@@ -278,6 +281,36 @@ By default, tools return a **compact text format** (one line per item) to save L
 - `due:`, `rem:`, `rec:`, `cat:`, `body:` fields shown only when populated
 
 To get the **full Graph JSON**, pass `verbose: true` to any read tool.
+
+---
+
+## 🔐 Safety annotations
+
+Every tool exposed by this server carries the [MCP tool annotations](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#tool-annotations) defined by the Model Context Protocol spec (2025-06-18):
+
+| Annotation | Meaning |
+|---|---|
+| `readOnlyHint` | The tool only fetches data; running it has no side effects on Microsoft Graph |
+| `destructiveHint` | The tool deletes data or otherwise causes data loss that cannot be undone |
+| `idempotentHint` | Running the tool repeatedly with the same arguments yields the same end state (safe to retry) |
+| `openWorldHint` | The tool talks to an external system (Microsoft Graph) — always `true` here |
+| `title` | Human-readable display name for MCP clients |
+
+These hints are **advisory** — the server itself enforces nothing — but MCP clients (Claude Code, Claude Desktop, Cursor, …) can use them to:
+
+- Auto-approve `readOnlyHint: true` calls without prompting (faster UX for read-heavy workflows)
+- Show a confirmation dialog before `destructiveHint: true` calls (e.g. `delete_task`, `batch_delete_tasks`, `move_task`)
+- Retry on transient failures only when `idempotentHint: true`
+- Display the friendly `title` instead of the snake_case `name`
+
+The full mapping is in [`src/index.ts`](src/index.ts) (`ANNOTATIONS` constant). Summary by safety class (see also the per-tool **Safety** column above):
+
+- **read** (15 tools): all `list_*`, `get_*`, `search_*`, `summarize_*`, `export_*` — `readOnlyHint: true`
+- **write** (4 tools): `create_*`, `batch_create_tasks` — `destructiveHint: false, idempotentHint: false`
+- **update** (5 tools): `update_*`, `complete_*`, `set_extension`, `bulk_update_categories`, `batch_complete_tasks` — `destructiveHint: false, idempotentHint: true`
+- **delete** (5 tools): `delete_*`, `batch_delete_tasks`, `move_task` — `destructiveHint: true, idempotentHint: true`
+
+`move_task` is classified as `delete` because it deletes the source task (a new task is created in the target list with a different id).
 
 ---
 

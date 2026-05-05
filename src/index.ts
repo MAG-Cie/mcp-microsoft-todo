@@ -8,6 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  type ToolAnnotations,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { getAccessToken } from "./auth.js";
@@ -57,7 +58,7 @@ import {
 import { t } from "./i18n.js";
 
 const server = new Server(
-  { name: "microsoft-todo", version: "1.1.5" },
+  { name: "microsoft-todo", version: "1.2.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -430,10 +431,70 @@ const taskBaseJsonProps = {
   reminder_time_zone: { type: "string" },
 };
 
+// ─── Tool annotations (MCP spec 2025-06-18) ────────────────────────────────
+// Per-tool safety hints for MCP clients. Every tool talks to Microsoft Graph
+// (external system) → openWorldHint: true everywhere. readOnly tools omit the
+// other mutation hints; mutating tools declare destructive/idempotent so
+// clients (Claude Code, Claude Desktop, …) can warn before risky calls.
+
+const READ: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
+const WRITE_CREATE: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+};
+const WRITE_UPDATE: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+};
+const WRITE_DELETE: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: true,
+};
+
+const ANNOTATIONS: Record<string, ToolAnnotations> = {
+  list_task_lists:        { ...READ,         title: "List task lists" },
+  list_tasks:             { ...READ,         title: "List tasks in a list" },
+  get_task:               { ...READ,         title: "Get task details" },
+  create_task:            { ...WRITE_CREATE, title: "Create task" },
+  update_task:            { ...WRITE_UPDATE, title: "Update task" },
+  complete_task:          { ...WRITE_UPDATE, title: "Mark task completed" },
+  delete_task:            { ...WRITE_DELETE, title: "Delete task" },
+  // move_task creates a new task in the target list and deletes the source
+  // task → destructive (the source id no longer exists after the call).
+  move_task:              { ...WRITE_DELETE, idempotentHint: false, title: "Move task to another list" },
+  search_tasks:           { ...READ,         title: "Search tasks across lists" },
+  summarize_today:        { ...READ,         title: "Summarize today's tasks" },
+  list_all_tasks:         { ...READ,         title: "List all tasks across all lists" },
+  list_checklist_items:   { ...READ,         title: "List checklist items (sub-tasks)" },
+  create_checklist_item:  { ...WRITE_CREATE, title: "Create checklist item" },
+  update_checklist_item:  { ...WRITE_UPDATE, title: "Update checklist item" },
+  delete_checklist_item:  { ...WRITE_DELETE, title: "Delete checklist item" },
+  list_linked_resources:  { ...READ,         title: "List linked resources" },
+  create_linked_resource: { ...WRITE_CREATE, title: "Create linked resource" },
+  delete_linked_resource: { ...WRITE_DELETE, title: "Delete linked resource" },
+  batch_create_tasks:     { ...WRITE_CREATE, title: "Batch create tasks" },
+  batch_complete_tasks:   { ...WRITE_UPDATE, title: "Batch complete tasks" },
+  batch_delete_tasks:     { ...WRITE_DELETE, title: "Batch delete tasks" },
+  list_extensions:        { ...READ,         title: "List task open extensions" },
+  // set_extension is an upsert (PATCH if present, POST if not) → idempotent.
+  set_extension:          { ...WRITE_UPDATE, title: "Set task open extension" },
+  delete_extension:       { ...WRITE_DELETE, title: "Delete task open extension" },
+  list_overdue_tasks:     { ...READ,         title: "List overdue tasks" },
+  list_tasks_by_category: { ...READ,         title: "List tasks by category" },
+  bulk_update_categories: { ...WRITE_UPDATE, title: "Bulk update task categories" },
+  export_tasks_ics:       { ...READ,         title: "Export tasks as iCalendar (.ics)" },
+};
+
 // ─── ListTools ─────────────────────────────────────────────────────────────
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
+  tools: ([
     {
       name: "list_task_lists",
       description:
@@ -889,7 +950,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
       },
     },
-  ],
+  ]).map((tool) => ({ ...tool, annotations: ANNOTATIONS[tool.name] })),
 }));
 
 // ─── CallTool ──────────────────────────────────────────────────────────────
