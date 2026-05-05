@@ -18,7 +18,7 @@
       "environmentVariables": [
         {
           "name": "MS_CLIENT_ID",
-          "description": "Application (client) ID from your Azure AD App Registration. See the README for setup instructions.",
+          "description": "MCP server for Microsoft To Do via Microsoft Graph. MSAL device code flow, no client secret needed.",
           "isRequired": true,
           "isSecret": false,
           "format": "string"
