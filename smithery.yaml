@@ -1,0 +1,33 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - msClientId
+    properties:
+      msClientId:
+        type: string
+        title: Microsoft Client ID
+        description: |
+          Application (client) ID from your Azure AD App Registration.
+          See README for setup instructions.
+      msTenant:
+        type: string
+        title: Microsoft Tenant
+        default: common
+        description: |
+          "common" (personal + work accounts), "consumers" (personal only),
+          "organizations" (work only), or your specific tenant ID.
+        enum:
+          - common
+          - consumers
+          - organizations
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', '@mag-cie/mcp-microsoft-todo@latest'],
+      env: {
+        MS_CLIENT_ID: config.msClientId,
+        MS_TENANT: config.msTenant || 'common'
+      }
+    })
