@@ -1,0 +1,102 @@
+name: Release
+
+# Triggers on tag push matching v* (e.g. v1.2.1, v2.0.0).
+# Steps:
+#   1. Verify the tag matches package.json + server.json (+ packages[0]) versions
+#   2. Test + build (sanity — prepublishOnly will re-run them)
+#   3. Publish to npm registry
+#   4. Publish to MCP Registry via mcp-publisher (GitHub OIDC auth, no secret)
+#   5. Create a GitHub Release with the extracted CHANGELOG section
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # create GitHub Release
+  id-token: write   # OIDC auth for mcp-publisher
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package.json + server.json versions
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          SRV_VERSION=$(node -p "require('./server.json').version")
+          SRV_PKG_VERSION=$(node -p "require('./server.json').packages[0].version")
+          echo "Tag:                       $TAG_VERSION"
+          echo "package.json:              $PKG_VERSION"
+          echo "server.json:               $SRV_VERSION"
+          echo "server.json packages[0]:   $SRV_PKG_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ] || \
+             [ "$TAG_VERSION" != "$SRV_VERSION" ] || \
+             [ "$TAG_VERSION" != "$SRV_PKG_VERSION" ]; then
+            echo "::error::Version drift between tag, package.json, and server.json — aborting."
+            exit 1
+          fi
+          echo "VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
+            | tar -xz
+          sudo mv mcp-publisher /usr/local/bin/
+          mcp-publisher --version
+
+      - name: Publish to MCP Registry
+        run: |
+          mcp-publisher login github-oidc
+          mcp-publisher publish
+
+      - name: Extract CHANGELOG section for this version
+        id: changelog
+        run: |
+          # Capture lines between "## [VERSION]" and the next "## [" header.
+          BODY=$(awk -v v="$VERSION" '
+            $0 ~ "^## \\["v"\\]" {flag=1; next}
+            /^## \[/ && flag {exit}
+            flag {print}
+          ' CHANGELOG.md)
+          if [ -z "$BODY" ]; then
+            BODY="See CHANGELOG.md for details."
+          fi
+          {
+            echo 'body<<EOF'
+            echo "$BODY"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes "${{ steps.changelog.outputs.body }}"
