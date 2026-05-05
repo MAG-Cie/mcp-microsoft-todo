@@ -6,12 +6,12 @@
     "url": "https://github.com/MAG-Cie/mcp-microsoft-todo",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "1.2.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@mag-cie/mcp-microsoft-todo",
-      "version": "0.2.0",
+      "version": "1.2.1",
       "transport": {
         "type": "stdio"
       },
