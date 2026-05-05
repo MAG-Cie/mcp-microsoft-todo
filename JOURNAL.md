@@ -1,3 +1,49 @@
+## [2026-05-04 21:30 → 22:00] — v1.1.3 / v1.1.4 / v1.1.5: hotfix Graph 400 + perf + throttle resilience
+
+### What was done
+
+**v1.1.3 — Graph 400 root-cause fix**
+- Diagnosed: Microsoft Graph rejects `$select` on `/me/todo/lists`, `/me/todo/lists/{id}/tasks`, and `/me/todo/lists/{id}/tasks/{id}` for personal Microsoft accounts (consumers tenant) with `RequestBroker--ParseUri` 400. Same error whether `$` is literal or `%24` — so v1.1.2 had only fixed half the bug.
+- Verified by direct Graph probe: `GET /me/todo/lists` ✅ / `GET /me/todo/lists?$select=id` ❌ 400 (request-id `9cae4888-...`).
+- Dropped `$select` on `listTaskLists`, `listTasks`, `getTask`, `fetchTasksAcrossLists` ($batch path), `bulkUpdateCategories` (GET phase).
+- Kept `$select` on `checklistItems` and `linkedResources` (Graph accepts).
+- Added `encodeODataValue()` helper preserving OData literal chars (`,` `/` `(` `)` `'` `:`) in `$filter`/`$orderby` while still encoding spaces, `&`, `=`.
+- Tests updated to assert no `$select=` in the URL; smoke test confirms 8 lists + summarize_today work end-to-end.
+
+**v1.1.4 — list_all_tasks tool for single-round-trip cross-list fetch**
+- New MCP tool `list_all_tasks(filter?, top_per_list?, include_completed?)` exposing `fetchTasksAcrossLists` (uses Graph `$batch` if >5 lists, parallel direct otherwise).
+- New `formatAllTasksCompact()` formatter (per-list grouping, inline error reporting).
+- New i18n key `allTasksHeader` in en/fr/es/de bundles.
+- Cuts the typical "what are all my tasks?" workflow from ~8 LLM-orchestrated MCP calls to 1 (perceived: ~50s → ~10–12s without throttling).
+- Tool count 27 → 28.
+
+**v1.1.5 — retry throttled sub-responses inside $batch**
+- Discovered: Graph `$batch` returns HTTP 200 even when individual sub-requests are throttled (status 429 in body). The outer `graphFetch` retry never sees these. Result: per-list `activityLimitReached` errors leaked through `list_all_tasks`, `summarize_today`, `search_tasks`, `list_overdue_tasks`, `list_tasks_by_category`, `bulk_update_categories`, all `batch_*` mutators.
+- `graphBatch()` now retries sub-responses with status 429 or 5xx individually via `graphFetch` (which honors `Retry-After` + bounded exp backoff). Retry-exhausted sub-responses are replaced with a `throttled` error body for coherent per-item results.
+- New unit test covers the per-sub-response retry path. 50/50 tests pass.
+- End-to-end smoke test (after deliberately triggering throttling): 80 tasks across 8 lists, **0 errors** (vs 4/8 lists failing before the fix).
+
+### Decisions & rationale
+
+- **Drop `$select` instead of feature-detecting per tenant**: simpler, correct on every Graph endpoint, modest payload increase. Compact-format output keeps the LLM context lean.
+- **Per-sub-response retry via `graphFetch` rather than re-batching**: re-issuing only the throttled items individually re-uses existing graphFetch retry/backoff logic. No new abstraction needed.
+- **Retry POSTs too** (batch_create_tasks): a 429 means Graph rejected the request before processing it, so retry is safe (no duplicate creation).
+- **Don't ship per-tenant detection**: not worth the complexity. The behavior we hit on consumers is conservative — work tenants accept stricter calls but won't fail with the looser ones.
+
+### Issues encountered / workarounds
+
+- v1.1.2 ship was based on an incomplete diagnosis (only the URL prefix `%24`/`$`, not the broker rejection of `$select` itself). Real root cause surfaced only after running a direct Graph probe with token from local cache. Lesson: validate hotfix against real Graph before npm publish, not just `tsc` + tests.
+- `vitest 4.1.5` cache corrupted twice during the session (`Vitest failed to find the runner` after rapid back-to-back `npm test` runs). Fix: `rm -rf node_modules/.vite node_modules/.vitest` before re-running.
+- Microsoft Graph throttled my smoke-test account during v1.1.4 development (3 successive smoke tests + 1 user invocation). Surfaced the v1.1.5 latent bug.
+
+### Next steps
+
+- Watch for further throttling reports — if persistent, consider adding a per-list rate-limiter on the client side (token bucket).
+- Future: optionally expose `$select` opt-in for power users on Entra ID work tenants who want the smaller payload.
+- No-op for now on the `--auth` UX; v1.1.1 covers the first-run case.
+
+---
+
 ## [2026-05-04 20:30] — v1.1.0: i18n for compact-format strings (en/fr/es/de)
 
 ### What was done
