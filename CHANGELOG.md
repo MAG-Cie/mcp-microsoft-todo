@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-05-05
+
+### Added
+- **MCP Registry manifest** ([`server.json`](server.json)) describing the package, transport, and required environment variables (`MS_CLIENT_ID`, `MS_TENANT`, `MS_AUTHORITY`). Enables submission to the official [Model Context Protocol Registry](https://registry.modelcontextprotocol.io/) at `io.github.MAG-Cie/mcp-microsoft-todo`.
+- `mcpName` field in `package.json` linking the npm package to the MCP Registry identifier.
+- **Dockerfile** + `.dockerignore` for [Glama](https://glama.ai) MCP server indexing (no behavior change for end users — Glama uses it to render the server card).
+- **GitHub Actions release workflow** ([`.github/workflows/release.yml`](.github/workflows/release.yml)) that triggers on `git push` of a `v*` tag, runs the test+build sanity checks, publishes to npm with `NPM_TOKEN`, publishes to the MCP Registry via `mcp-publisher` (GitHub OIDC, no secret), and creates a GitHub Release with the extracted CHANGELOG section. Future releases need only a version bump + tag push.
+
+### Changed
+- Bumped `serverInfo.version` reported by the MCP server from `1.2.0` to `1.2.1` (was lagging behind `package.json`).
+
+### Notes
+- Pure infra/metadata release — no runtime behavior change for existing users.
+
 ## [1.2.0] - 2026-05-05
 
 ### Added
