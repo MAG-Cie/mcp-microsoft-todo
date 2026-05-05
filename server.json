@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.mag-cie/mcp-microsoft-todo",
-  "description": "MCP server for Microsoft To Do via Microsoft Graph API. Simple setup with MSAL device code flow — no client secret needed.",
+  "description": "MCP server for Microsoft To Do via Microsoft Graph. MSAL device code flow, no client secret needed.",
   "repository": {
     "url": "https://github.com/MAG-Cie/mcp-microsoft-todo",
     "source": "github"
@@ -18,7 +18,7 @@
       "environmentVariables": [
         {
           "name": "MS_CLIENT_ID",
-          "description": "MCP server for Microsoft To Do via Microsoft Graph. MSAL device code flow, no client secret needed.",
+          "description": "Application (client) ID from your Azure AD App Registration. See the README for setup instructions.",
           "isRequired": true,
           "isSecret": false,
           "format": "string"
