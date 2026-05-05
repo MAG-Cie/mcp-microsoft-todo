@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mag-cie/mcp-microsoft-todo",
+  "description": "MCP server for Microsoft To Do via Microsoft Graph API. Simple setup with MSAL device code flow — no client secret needed.",
+  "repository": {
+    "url": "https://github.com/MAG-Cie/mcp-microsoft-todo",
+    "source": "github"
+  },
+  "version": "0.2.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@mag-cie/mcp-microsoft-todo",
+      "version": "0.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MS_CLIENT_ID",
+          "description": "Application (client) ID from your Azure AD App Registration. See the README for setup instructions.",
+          "isRequired": true,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "MS_TENANT",
+          "description": "Microsoft tenant: 'common' (personal + work), 'consumers' (personal only), 'organizations' (work only), or your specific tenant ID.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string",
+          "default": "common"
+        }
+      ]
+    }
+  ]
+}
