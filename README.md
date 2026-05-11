@@ -11,6 +11,14 @@ Works with **any Microsoft account**: personal (outlook.com, hotmail.com, live.c
 
 ---
 
+## 🏗 Built and maintained by MAG&Cie
+
+This MCP server is open-source and free to use. It's also a showcase of our **Création de MCP** offering at [MAG&Cie](https://www.mag-cie.com) — we build custom MCP connectors for businesses that want to plug AI into their internal tools (CRM, ERP, custom APIs, internal databases).
+
+If you'd like the same kind of connector for **your** tools — drop us a line at [www.mag-cie.com/creation-mcp](https://www.mag-cie.com/creation-mcp).
+
+---
+
 ## 🚀 End-user installation
 
 ### Prerequisites (all clients)

@@ -8,6 +8,14 @@ Marche avec **n'importe quel compte Microsoft** : perso (outlook.com, hotmail.co
 
 ---
 
+## 🏗 Conçu et maintenu par MAG&Cie
+
+Ce serveur MCP est open-source et utilisable librement. C'est aussi la vitrine de notre offre **Création de MCP** chez [MAG&Cie](https://www.mag-cie.com) — nous développons des connecteurs MCP sur-mesure pour les entreprises qui veulent brancher l'IA sur leurs outils internes (CRM, ERP, APIs maison, bases de données métier).
+
+Vous voulez le même type de connecteur pour **vos** outils ? Rendez-vous sur [www.mag-cie.com/creation-mcp](https://www.mag-cie.com/creation-mcp).
+
+---
+
 ## 🚀 Installation utilisateur final
 
 ### Pré-requis (commun à tous les clients)
