@@ -14,6 +14,9 @@ import { z } from "zod";
 import { getAccessToken } from "./auth.js";
 import {
   listTaskLists,
+  createTaskList,
+  updateTaskList,
+  deleteTaskList,
   listTasks,
   getTask,
   createTask,
@@ -143,6 +146,18 @@ const taskBaseFields = {
 
 const schemas = {
   list_task_lists: z.object({ ...verboseField, ...paginateField }),
+  create_task_list: z.object({
+    display_name: z.string().min(1),
+    ...verboseField,
+  }),
+  update_task_list: z.object({
+    list_id: z.string(),
+    display_name: z.string().min(1),
+    ...verboseField,
+  }),
+  delete_task_list: z.object({
+    list_id: z.string(),
+  }),
   list_tasks: z.object({
     list_id: z.string().describe("ID of the To Do list"),
     filter: z
@@ -459,6 +474,9 @@ const WRITE_DELETE: ToolAnnotations = {
 
 const ANNOTATIONS: Record<string, ToolAnnotations> = {
   list_task_lists:        { ...READ,         title: "List task lists" },
+  create_task_list:       { ...WRITE_CREATE, title: "Create task list" },
+  update_task_list:       { ...WRITE_UPDATE, title: "Rename task list" },
+  delete_task_list:       { ...WRITE_DELETE, title: "Delete task list (and its tasks)" },
   list_tasks:             { ...READ,         title: "List tasks in a list" },
   get_task:               { ...READ,         title: "Get task details" },
   create_task:            { ...WRITE_CREATE, title: "Create task" },
@@ -502,6 +520,42 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: { ...verboseJsonProp, ...paginateJsonProp },
+      },
+    },
+    {
+      name: "create_task_list",
+      description: "Create a new To Do list.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          display_name: { type: "string" },
+          ...verboseJsonProp,
+        },
+        required: ["display_name"],
+      },
+    },
+    {
+      name: "update_task_list",
+      description: "Rename a To Do list.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          list_id: { type: "string" },
+          display_name: { type: "string" },
+          ...verboseJsonProp,
+        },
+        required: ["list_id", "display_name"],
+      },
+    },
+    {
+      name: "delete_task_list",
+      description: "Delete a To Do list and every task it contains.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          list_id: { type: "string" },
+        },
+        required: ["list_id"],
       },
     },
     {
@@ -973,6 +1027,21 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
             ? t.noLists
             : `${t.lists(ls.length)}\n${ls.map(formatListCompact).join("\n")}`
         );
+      }
+      case "create_task_list": {
+        const a = schemas.create_task_list.strict().parse(args);
+        const list = await createTaskList(a.display_name);
+        return out(list, a.verbose, formatListCompact);
+      }
+      case "update_task_list": {
+        const a = schemas.update_task_list.strict().parse(args);
+        const list = await updateTaskList(a.list_id, a.display_name);
+        return out(list, a.verbose, formatListCompact);
+      }
+      case "delete_task_list": {
+        const a = schemas.delete_task_list.strict().parse(args);
+        await deleteTaskList(a.list_id);
+        return text(t.listDeleted(a.list_id));
       }
       case "list_tasks": {
         const a = schemas.list_tasks.strict().parse(args);

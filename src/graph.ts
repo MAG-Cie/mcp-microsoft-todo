@@ -301,6 +301,30 @@ export async function listTaskLists(
   return data.value;
 }
 
+export async function createTaskList(displayName: string): Promise<TodoTaskList> {
+  return graphFetch<TodoTaskList>(`/me/todo/lists`, {
+    method: "POST",
+    body: JSON.stringify({ displayName }),
+  });
+}
+
+export async function updateTaskList(
+  listId: string,
+  displayName: string
+): Promise<TodoTaskList> {
+  return graphFetch<TodoTaskList>(`/me/todo/lists/${enc(listId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ displayName }),
+  });
+}
+
+// Deleting a list also deletes every task it contains (Graph cascade).
+export async function deleteTaskList(listId: string): Promise<void> {
+  await graphFetch<void>(`/me/todo/lists/${enc(listId)}`, {
+    method: "DELETE",
+  });
+}
+
 // ─── Tasks ─────────────────────────────────────────────────────────────────
 
 export interface CreateTaskInput {

@@ -52,6 +52,7 @@ interface Messages {
   okHeader: string;
   errHeader: string;
   noDetail: string;
+  listDeleted: (id: string) => string;
   taskDeleted: (id: string) => string;
   subItemDeleted: (id: string) => string;
   linkedDeleted: (id: string) => string;
@@ -80,6 +81,7 @@ const en: Messages = {
   okHeader: "OK:",
   errHeader: "Errors:",
   noDetail: "(no detail)",
+  listDeleted: (id) => `List ${id} deleted.`,
   taskDeleted: (id) => `Task ${id} deleted.`,
   subItemDeleted: (id) => `Sub-item ${id} deleted.`,
   linkedDeleted: (id) => `Linked resource ${id} deleted.`,
@@ -108,6 +110,7 @@ const fr: Messages = {
   okHeader: "OK :",
   errHeader: "Erreurs :",
   noDetail: "(pas de détail)",
+  listDeleted: (id) => `Liste ${id} supprimée.`,
   taskDeleted: (id) => `Tâche ${id} supprimée.`,
   subItemDeleted: (id) => `Sous-élément ${id} supprimé.`,
   linkedDeleted: (id) => `Ressource liée ${id} supprimée.`,
@@ -136,6 +139,7 @@ const es: Messages = {
   okHeader: "OK:",
   errHeader: "Errores:",
   noDetail: "(sin detalle)",
+  listDeleted: (id) => `Lista ${id} eliminada.`,
   taskDeleted: (id) => `Tarea ${id} eliminada.`,
   subItemDeleted: (id) => `Sub-elemento ${id} eliminado.`,
   linkedDeleted: (id) => `Recurso enlazado ${id} eliminado.`,
@@ -164,6 +168,7 @@ const de: Messages = {
   okHeader: "OK:",
   errHeader: "Fehler:",
   noDetail: "(kein Detail)",
+  listDeleted: (id) => `Liste ${id} gelöscht.`,
   taskDeleted: (id) => `Aufgabe ${id} gelöscht.`,
   subItemDeleted: (id) => `Unterelement ${id} gelöscht.`,
   linkedDeleted: (id) => `Verknüpfte Ressource ${id} gelöscht.`,
