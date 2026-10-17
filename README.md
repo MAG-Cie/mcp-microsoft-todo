@@ -193,6 +193,7 @@ Once installed, just ask Claude in natural language. Sample prompts that exercis
 | Prompt | Tool(s) |
 |---|---|
 | *"Show me all my To Do lists"* | `list_task_lists` |
+| *"Create a 'Website relaunch' list and add 3 tasks to it"* | `create_task_list` + `batch_create_tasks` |
 | *"What do I have to do today?"* | `summarize_today` |
 | *"Show me my overdue tasks"* | `list_overdue_tasks` |
 | *"List tasks tagged 'work'"* | `list_tasks_by_category` |
@@ -221,7 +222,7 @@ Once installed, just ask Claude in natural language. Sample prompts that exercis
 
 ---
 
-## 🛠 Available tools (28)
+## 🛠 Available tools (31)
 
 Safety column legend: `read` = read-only, `write` = mutates state (non-idempotent create), `update` = idempotent mutation (safe to retry), `delete` = destructive (data loss). See [Safety annotations](#-safety-annotations) below for details.
 
@@ -229,6 +230,9 @@ Safety column legend: `read` = read-only, `write` = mutates state (non-idempoten
 | Tool | Safety | Description |
 |---|---|---|
 | `list_task_lists` | read | All your To Do lists |
+| `create_task_list` | write | Create a list |
+| `update_task_list` | update | Rename a list |
+| `delete_task_list` | delete | Delete a list **and every task in it** |
 | `list_tasks` | read | Tasks of a list (OData filter, `$orderby`, `paginate`) |
 | `get_task` | read | Detail of a task by ID |
 | `create_task` | write | Create a task (title, body, importance, due date, categories, **recurrence, reminder**) |
@@ -314,9 +318,9 @@ These hints are **advisory** — the server itself enforces nothing — but MCP 
 The full mapping is in [`src/index.ts`](src/index.ts) (`ANNOTATIONS` constant). Summary by safety class (see also the per-tool **Safety** column above):
 
 - **read** (15 tools): all `list_*`, `get_*`, `search_*`, `summarize_*`, `export_*` — `readOnlyHint: true`
-- **write** (4 tools): `create_*`, `batch_create_tasks` — `destructiveHint: false, idempotentHint: false`
-- **update** (5 tools): `update_*`, `complete_*`, `set_extension`, `bulk_update_categories`, `batch_complete_tasks` — `destructiveHint: false, idempotentHint: true`
-- **delete** (5 tools): `delete_*`, `batch_delete_tasks`, `move_task` — `destructiveHint: true, idempotentHint: true`
+- **write** (5 tools): `create_*`, `batch_create_tasks` — `destructiveHint: false, idempotentHint: false`
+- **update** (6 tools): `update_*`, `complete_*`, `set_extension`, `bulk_update_categories`, `batch_complete_tasks` — `destructiveHint: false, idempotentHint: true`
+- **delete** (6 tools): `delete_*`, `batch_delete_tasks`, `move_task` — `destructiveHint: true, idempotentHint: true`
 
 `move_task` is classified as `delete` because it deletes the source task (a new task is created in the target list with a different id).
 

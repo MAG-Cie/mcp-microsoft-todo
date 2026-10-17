@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Task list management**: `create_task_list` (`POST /me/todo/lists`), `update_task_list` (rename, `PATCH /me/todo/lists/{id}`) and `delete_task_list` (`DELETE /me/todo/lists/{id}`, which also deletes every task in the list). No new scope: `Tasks.ReadWrite` already covers list writes. Requested in [#1](https://github.com/MAG-Cie/mcp-microsoft-todo/issues/1).
+
 ## [1.2.2] - 2026-05-05
 
 ### Fixed

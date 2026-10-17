@@ -15,7 +15,9 @@ import {
   batchDeleteTasks,
   bulkUpdateCategories,
   createTask,
+  createTaskList,
   deleteTask,
+  deleteTaskList,
   exportTasksIcs,
   listOverdueTasks,
   listTaskLists,
@@ -26,6 +28,7 @@ import {
   setTaskExtension,
   summarizeToday,
   updateTask,
+  updateTaskList,
 } from "./graph.js";
 
 type MockFetchResponse = {
@@ -77,6 +80,42 @@ describe("listTaskLists", () => {
     expect(url).toContain("/me/todo/lists");
     // No $select: Graph rejects it on this endpoint for personal accounts.
     expect(url).not.toContain("$select=");
+  });
+});
+
+describe("task list CRUD", () => {
+  it("createTaskList POST /me/todo/lists avec displayName", async () => {
+    const fetchMock = makeFetch([
+      { status: 201, body: { id: "L9", displayName: "Projet", isOwner: true, isShared: false } },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const list = await createTaskList("Projet");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/me\/todo\/lists$/);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ displayName: "Projet" });
+    expect(list.id).toBe("L9");
+  });
+
+  it("updateTaskList PATCH /me/todo/lists/{id} avec ID encodé", async () => {
+    const fetchMock = makeFetch([
+      { body: { id: "A/B", displayName: "Renamed", isOwner: true, isShared: false } },
+    ]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await updateTaskList("A/B", "Renamed");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/me\/todo\/lists\/A%2FB$/);
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ displayName: "Renamed" });
+  });
+
+  it("deleteTaskList DELETE 204 sans body", async () => {
+    const fetchMock = makeFetch([{ status: 204 }]);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await deleteTaskList("L9");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/me\/todo\/lists\/L9$/);
+    expect(init.method).toBe("DELETE");
   });
 });
 
